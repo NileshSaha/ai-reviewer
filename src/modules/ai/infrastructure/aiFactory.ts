@@ -1,7 +1,10 @@
 import { AIProvider } from '../application/aiProvider';
 import { MinimaxAIProvider } from '../infrastructure/minimaxAIProvider';
+import { GeminiAIProvider } from '../infrastructure/geminiAIProvider';
+import { OpenRouterAIProvider } from '../infrastructure/openrouterAIProvider';
 import { GroqAIProvider } from '../infrastructure/groqAIProvider';
 import { OpenAIProvider } from '../infrastructure/openAIProvider';
+import { FallbackAIProvider, ProviderEntry } from '../infrastructure/fallbackAIProvider';
 import { AIConfig } from '../../../config/types';
 import { Logger } from '../../../shared/types/logger';
 import { ValidationError } from '../../../shared/types/errors';
@@ -9,13 +12,22 @@ import { BaseAIProviderOptions } from '../infrastructure/baseAIProvider';
 
 type ProviderName = AIConfig['provider'];
 
-interface ProviderSpec {
-  name: ProviderName;
-  apiKey: string;
-  factory: (apiKey: string) => AIProvider;
+interface CandidateSpec {
+  id: string;
+  providerType: ProviderName;
+  displayName: string;
+  apiKey: string | undefined;
+  create: (key: string) => AIProvider;
 }
 
-const FALLBACK_ORDER: ProviderName[] = ['minimax', 'groq', 'openai'];
+const DEFAULT_PRIORITY_ORDER = [
+  'minimax-1',
+  'minimax-2',
+  'gemini',
+  'openrouter',
+  'groq',
+  'openai',
+];
 
 function buildProviderOptions(config: AIConfig): BaseAIProviderOptions {
   return {
@@ -28,46 +40,106 @@ function buildProviderOptions(config: AIConfig): BaseAIProviderOptions {
 
 export function createAIProvider(config: AIConfig, logger: Logger): AIProvider {
   const providerOpts = buildProviderOptions(config);
-  const providers: ProviderSpec[] = [
-    { name: 'minimax', apiKey: config.minimaxApiKey, factory: (k) => new MinimaxAIProvider(k, logger, config.minimaxModel, providerOpts) },
-    { name: 'groq', apiKey: config.groqApiKey, factory: (k) => new GroqAIProvider(k, logger, config.groqModel, providerOpts) },
-    { name: 'openai', apiKey: config.openaiApiKey, factory: (k) => new OpenAIProvider(k, logger, config.openaiModel, providerOpts) },
+
+  const candidates: CandidateSpec[] = [
+    {
+      id: 'minimax-1',
+      providerType: 'minimax',
+      displayName: 'minimax-user1',
+      apiKey: config.minimaxApiKey || undefined,
+      create: (key) =>
+        new MinimaxAIProvider(key, logger, config.minimaxModel, config.minimaxEndpoint, providerOpts),
+    },
+    {
+      id: 'minimax-2',
+      providerType: 'minimax',
+      displayName: 'minimax-user2',
+      apiKey: config.minimaxApiKey2 || undefined,
+      create: (key) =>
+        new MinimaxAIProvider(key, logger, config.minimaxModel, config.minimaxEndpoint, providerOpts),
+    },
+    {
+      id: 'gemini',
+      providerType: 'gemini',
+      displayName: 'gemini',
+      apiKey: config.geminiApiKey || undefined,
+      create: (key) =>
+        new GeminiAIProvider(key, logger, config.geminiModel, config.geminiEndpoint, providerOpts),
+    },
+    {
+      id: 'openrouter',
+      providerType: 'openrouter',
+      displayName: 'openrouter',
+      apiKey: config.openrouterApiKey || undefined,
+      create: (key) =>
+        new OpenRouterAIProvider(key, logger, config.openrouterModel, config.openrouterEndpoint, providerOpts),
+    },
+    {
+      id: 'groq',
+      providerType: 'groq',
+      displayName: 'groq',
+      apiKey: config.groqApiKey || undefined,
+      create: (key) =>
+        new GroqAIProvider(key, logger, config.groqModel, config.groqEndpoint, providerOpts),
+    },
+    {
+      id: 'openai',
+      providerType: 'openai',
+      displayName: 'openai',
+      apiKey: config.openaiApiKey || undefined,
+      create: (key) =>
+        new OpenAIProvider(key, logger, config.openaiModel, config.openaiEndpoint, providerOpts),
+    },
   ];
 
-  const configuredName = FALLBACK_ORDER.includes(config.provider) ? config.provider : null;
+  // Determine priority order: promote configured LLM_PROVIDER to top if set
+  const configuredType = config.provider;
+  const prioritizedCandidates: CandidateSpec[] = [];
 
-  if (configuredName) {
-    const configured = providers.find((p) => p.name === configuredName)!;
-    if (configured.apiKey) {
-      return configured.factory(configured.apiKey);
+  // 1. First add candidate(s) matching the configured provider
+  for (const candidate of candidates) {
+    if (candidate.providerType === configuredType && candidate.apiKey) {
+      prioritizedCandidates.push(candidate);
     }
-    logger.warn(
-      `Configured LLM provider '${configuredName}' has no API key set; falling back to next available provider`,
-      { module: 'ai-factory', configuredProvider: configuredName }
+  }
+
+  // 2. Then add the remaining candidates in DEFAULT_PRIORITY_ORDER
+  for (const id of DEFAULT_PRIORITY_ORDER) {
+    const candidate = candidates.find((c) => c.id === id);
+    if (
+      candidate &&
+      candidate.apiKey &&
+      !prioritizedCandidates.some((p) => p.id === candidate.id)
+    ) {
+      prioritizedCandidates.push(candidate);
+    }
+  }
+
+  if (prioritizedCandidates.length === 0) {
+    throw new ValidationError(
+      'No AI provider API key configured. Set at least one of: MINIMAX_API_KEY, MINIMAX_API_KEY_2, GEMINI_API_KEY, OPENROUTER_API_KEY, GROQ_API_KEY, OPENAI_API_KEY'
     );
-  } else {
-    logger.warn(`Unknown LLM_PROVIDER '${config.provider}'; falling back to next available provider`, {
+  }
+
+  const activeEntries: ProviderEntry[] = prioritizedCandidates.map((c) => ({
+    name: c.displayName,
+    provider: c.create(c.apiKey!),
+  }));
+
+  logger.info(
+    `AI Provider chain initialized with ${activeEntries.length} provider(s): ${activeEntries
+      .map((e) => e.name)
+      .join(' -> ')}`,
+    {
       module: 'ai-factory',
-      configuredProvider: config.provider,
-    });
-  }
-
-  for (const name of FALLBACK_ORDER) {
-    if (name === configuredName) continue;
-    const candidate = providers.find((p) => p.name === name)!;
-    if (candidate.apiKey) {
-      logger.warn(`Using AI provider '${name}' as fallback`, {
-        module: 'ai-factory',
-        fallbackProvider: name,
-        configuredProvider: configuredName,
-      });
-      return candidate.factory(candidate.apiKey);
+      primaryProvider: activeEntries[0].name,
+      totalConfigured: activeEntries.length,
     }
+  );
+
+  if (activeEntries.length === 1) {
+    return activeEntries[0].provider;
   }
 
-  throw new ValidationError(
-    `No AI provider API key configured. Set one of: ${providers
-      .map((p) => `${p.name.toUpperCase()}_API_KEY`)
-      .join(', ')}`
-  );
+  return new FallbackAIProvider(activeEntries, logger);
 }

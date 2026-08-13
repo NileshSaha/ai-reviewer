@@ -17,11 +17,19 @@ export interface GitHubCheck extends ComponentCheck {
   error?: string;
 }
 
+export interface IndividualAICheck {
+  name: string;
+  status: CheckStatus;
+  latencySeconds: number;
+  error?: string;
+}
+
 export interface AICheck extends ComponentCheck {
   provider: string;
   status: CheckStatus;
   latencySeconds: number;
   error?: string;
+  providers?: IndividualAICheck[];
 }
 
 export interface HealthReport {
@@ -68,9 +76,20 @@ export function createHealthChecker(deps: HealthCheckerDeps): () => Promise<Heal
       return cached.report;
     }
 
-    const [githubResult, aiResult] = await Promise.all([
+    // Extract individual providers if wrapped in FallbackAIProvider
+    const entries: Array<{ name: string; provider: AIProvider }> =
+      typeof (deps.aiProvider as any).getEntries === 'function'
+        ? (deps.aiProvider as any).getEntries()
+        : [{ name: deps.aiProvider.name(), provider: deps.aiProvider }];
+
+    const [githubResult, ...aiResults] = await Promise.all([
       runTimed('github', () => deps.githubClient.validateAuth()),
-      runTimed('ai', () => deps.aiProvider.validateApiKey()),
+      ...entries.map((entry) =>
+        runTimed(`ai:${entry.name}`, () => entry.provider.validateApiKey()).then((res) => ({
+          name: entry.name,
+          ...res,
+        }))
+      ),
     ]);
 
     let githubCheck: GitHubCheck;
@@ -85,17 +104,37 @@ export function createHealthChecker(deps: HealthCheckerDeps): () => Promise<Heal
       githubCheck = { status: 'unhealthy', latencySeconds: githubResult.latencySeconds, error: githubResult.error };
     }
 
-    let aiCheck: AICheck;
-    if (aiResult.value !== undefined && aiResult.error === undefined) {
-      const v = aiResult.value;
-      if (v.valid) {
-        aiCheck = { provider: deps.aiProvider.name(), status: 'healthy', latencySeconds: aiResult.latencySeconds };
-      } else {
-        aiCheck = { provider: deps.aiProvider.name(), status: 'unhealthy', latencySeconds: aiResult.latencySeconds, error: v.error };
+    const individualChecks: IndividualAICheck[] = aiResults.map((res) => {
+      if (res.value !== undefined && res.error === undefined) {
+        if (res.value.valid) {
+          return { name: res.name, status: 'healthy' as CheckStatus, latencySeconds: res.latencySeconds };
+        }
+        return {
+          name: res.name,
+          status: 'unhealthy' as CheckStatus,
+          latencySeconds: res.latencySeconds,
+          error: res.value.error,
+        };
       }
-    } else {
-      aiCheck = { provider: deps.aiProvider.name(), status: 'unhealthy', latencySeconds: aiResult.latencySeconds, error: aiResult.error };
-    }
+      return {
+        name: res.name,
+        status: 'unhealthy' as CheckStatus,
+        latencySeconds: res.latencySeconds,
+        error: res.error,
+      };
+    });
+
+    const anyAiHealthy = individualChecks.some((c) => c.status === 'healthy');
+    const maxAiLatency = individualChecks.reduce((max, c) => Math.max(max, c.latencySeconds), 0);
+    const firstError = individualChecks.find((c) => c.error)?.error;
+
+    const aiCheck: AICheck = {
+      provider: deps.aiProvider.name(),
+      status: anyAiHealthy ? 'healthy' : 'unhealthy',
+      latencySeconds: maxAiLatency,
+      error: anyAiHealthy ? undefined : firstError,
+      providers: individualChecks,
+    };
 
     const report: HealthReport = {
       status: githubCheck.status === 'healthy' && aiCheck.status === 'healthy' ? 'healthy' : 'unhealthy',

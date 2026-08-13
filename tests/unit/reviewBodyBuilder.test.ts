@@ -37,7 +37,7 @@ describe('buildReviewBody', () => {
     expect(body).toContain('## AI Based Code Review ✅');
     expect(body).toContain('**Score:** 92/100');
     expect(body).toContain('Custom formatted comment from AI');
-    expect(body).toContain('AI Review powered by groq');
+    expect(body).not.toContain('AI Review powered by');
   });
 
   it('generates REQUEST_CHANGES body with overallComment from AI', () => {

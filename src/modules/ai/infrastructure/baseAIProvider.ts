@@ -226,11 +226,33 @@ export abstract class BaseAIProvider {
 
   protected parseAIReviewResponse(content: string): AIReviewResult {
     try {
-      const cleaned = content
-        .replace(/^```json\n?/i, '')
-        .replace(/^```\n?/, '')
-        .replace(/```$/, '')
+      // 1. Strip reasoning/thinking tags emitted by reasoning models (e.g. <think>...</think>)
+      let cleaned = content
+        .replace(/<think>[\s\S]*?<\/think>/gi, '')
+        .replace(/<thought>[\s\S]*?<\/thought>/gi, '')
         .trim();
+
+      // 2. Extract JSON code block if wrapped in markdown fences
+      const jsonBlockMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+      if (jsonBlockMatch && jsonBlockMatch[1]) {
+        cleaned = jsonBlockMatch[1].trim();
+      } else {
+        // 3. Extract the outermost JSON object if surrounding text exists
+        const firstBrace = cleaned.indexOf('{');
+        const lastBrace = cleaned.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace > firstBrace) {
+          cleaned = cleaned.substring(firstBrace, lastBrace + 1).trim();
+        }
+      }
+
+      if (!cleaned) {
+        cleaned = content
+          .replace(/^```json\n?/i, '')
+          .replace(/^```\n?/, '')
+          .replace(/```$/, '')
+          .trim();
+      }
+
       const parsed = JSON.parse(cleaned);
 
       const verdict: ReviewDecision = parsed.verdict === 'REQUEST_CHANGES' ? 'REQUEST_CHANGES' : 'APPROVE';

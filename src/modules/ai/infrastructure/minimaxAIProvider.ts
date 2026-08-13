@@ -4,11 +4,25 @@ import { Logger } from '../../../shared/types/logger';
 
 export class MinimaxAIProvider extends BaseAIProvider {
   protected nameValue = 'minimax';
-  protected endpoint = 'https://api.minimax.chat/v1/chat/completions';
+  protected endpoint: string;
 
-  constructor(apiKey: string, logger: Logger, model = 'MiniMax-M3', options: BaseAIProviderOptions = {}) {
+  constructor(
+    apiKey: string,
+    logger: Logger,
+    model = 'MiniMax-M3',
+    endpoint = 'https://api.minimax.io/v1/chat/completions',
+    options: BaseAIProviderOptions = {}
+  ) {
     super(apiKey, logger, model);
+    this.endpoint = endpoint || 'https://api.minimax.io/v1/chat/completions';
     this.applyOptions(options);
+  }
+
+  protected override applyOptions(opts: BaseAIProviderOptions): void {
+    super.applyOptions(opts);
+    if (!opts.maxResponseTokens || this.maxResponseTokens < 2500) {
+      this.maxResponseTokens = Math.max(this.maxResponseTokens, 3000);
+    }
   }
 
   buildRequestBody(prompt: string, maxResponseTokens?: number): object {
@@ -16,21 +30,38 @@ export class MinimaxAIProvider extends BaseAIProvider {
       model: this.model,
       messages: [
         {
+          role: 'system',
+          content: 'You are an expert code reviewer. You MUST respond with valid JSON only.',
+        },
+        {
           role: 'user',
           content: prompt,
         },
       ],
-      response_format: {
-        type: 'json_object',
-      },
+      temperature: 0.3,
       max_tokens: maxResponseTokens ?? this.maxResponseTokens,
     };
   }
 
   parseResponse(response: any): AIReviewResult {
+    if (response?.base_resp && response.base_resp.status_code !== 0) {
+      throw new Error(
+        `MiniMax API business error (${response.base_resp.status_code}): ${response.base_resp.status_msg || 'Unknown error'}`
+      );
+    }
+
+    if (response?.error) {
+      const errMsg = typeof response.error === 'string'
+        ? response.error
+        : response.error.message || JSON.stringify(response.error);
+      throw new Error(`MiniMax API error: ${errMsg}`);
+    }
+
     const content = response.choices?.[0]?.message?.content;
     if (!content) {
-      throw new Error('Empty response from Minimax API');
+      throw new Error(
+        `Empty response from Minimax API: ${JSON.stringify(response).slice(0, 300)}`
+      );
     }
     return this.parseAIReviewResponse(content);
   }

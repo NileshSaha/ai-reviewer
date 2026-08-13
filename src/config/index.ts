@@ -49,8 +49,8 @@ function parseRepositories(): RepositoryConfig[] {
 }
 
 export function loadConfig(): AppConfig {
-  const llmProvider = getEnvOptional('LLM_PROVIDER', 'groq') as AIConfig['provider'];
-  if (!['minimax', 'groq', 'openai'].includes(llmProvider)) {
+  const llmProvider = getEnvOptional('LLM_PROVIDER', 'minimax') as AIConfig['provider'];
+  if (!['minimax', 'gemini', 'openrouter', 'groq', 'openai'].includes(llmProvider)) {
     throw new ValidationError(`Invalid LLM_PROVIDER: ${llmProvider}`);
   }
 
@@ -111,11 +111,21 @@ export function loadConfig(): AppConfig {
   const ai: AIConfig = {
     provider: llmProvider,
     minimaxApiKey: process.env['MINIMAX_API_KEY'] ?? '',
+    minimaxApiKey2: process.env['MINIMAX_API_KEY_2'] || undefined,
     minimaxModel: getEnvOptional('MINIMAX_MODEL', 'MiniMax-M3'),
+    minimaxEndpoint: getEnvOptional('MINIMAX_API_ENDPOINT', 'https://api.minimax.io/v1/chat/completions'),
+    geminiApiKey: process.env['GEMINI_API_KEY'] || undefined,
+    geminiModel: getEnvOptional('GEMINI_MODEL', 'gemini-3.5-flash'),
+    geminiEndpoint: getEnvOptional('GEMINI_API_ENDPOINT', 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions'),
+    openrouterApiKey: process.env['OPENROUTER_API_KEY'] || undefined,
+    openrouterModel: getEnvOptional('OPENROUTER_MODEL', 'openrouter/free'),
+    openrouterEndpoint: getEnvOptional('OPENROUTER_API_ENDPOINT', 'https://openrouter.ai/api/v1/chat/completions'),
     groqApiKey: process.env['GROQ_API_KEY'] ?? '',
     groqModel: getEnvOptional('GROQ_MODEL', 'llama-3.1-8b-instant'),
+    groqEndpoint: getEnvOptional('GROQ_API_ENDPOINT', 'https://api.groq.com/openai/v1/chat/completions'),
     openaiApiKey: process.env['OPENAI_API_KEY'] ?? '',
     openaiModel: getEnvOptional('OPENAI_MODEL', 'gpt-4o-mini'),
+    openaiEndpoint: getEnvOptional('OPENAI_API_ENDPOINT', 'https://api.openai.com/v1/chat/completions'),
     approvalThreshold: getEnvInt('APPROVAL_THRESHOLD', 80),
     maxPromptTokens,
     maxResponseTokens,

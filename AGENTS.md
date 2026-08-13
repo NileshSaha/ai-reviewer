@@ -208,9 +208,9 @@ All external dependencies are abstracted behind interfaces:
 Three AI providers supported via adapter pattern:
 
 ### Minimax
-- Endpoint: `https://api.minimax.chat/v1/chat/completions`
-- Model: `MiniMax-Text-01`
-- Auth: Bearer token
+- Endpoint: `https://api.minimax.io/v1/chat/completions` (configurable via `MINIMAX_API_ENDPOINT`)
+- Model: `MiniMax-M3`, `MiniMax-Text-01`, `MiniMax-M2.7` (configurable via `MINIMAX_MODEL`)
+- Auth: Bearer token (`sk-cp...` Token Plan or standard API key)
 
 ### Groq (Recommended - Free Tier)
 - Endpoint: `https://api.groq.com/openai/v1/chat/completions`

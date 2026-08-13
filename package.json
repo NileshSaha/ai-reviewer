@@ -9,6 +9,7 @@
     "dev": "ts-node src/index.ts",
     "test": "jest",
     "test:coverage": "jest --coverage",
+    "test:minimax": "ts-node scripts/test-minimax.ts",
     "lint": "eslint src/**/*.ts",
     "db:migrate": "sequelize-cli db:migrate",
     "db:migrate:undo": "sequelize-cli db:migrate:undo",

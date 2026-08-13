@@ -53,10 +53,20 @@ All configuration via environment variables in `.env`:
 |---|---|---|---|
 | `GITHUB_PAT` | Yes | - | GitHub Personal Access Token |
 | `GITHUB_USERNAME` | Yes | - | GitHub username to monitor |
-| `LLM_PROVIDER` | No | `groq` | `minimax`, `groq`, or `openai` |
-| `GROQ_API_KEY` | For Groq | - | Groq API key |
-| `MINIMAX_API_KEY` | For Minimax | - | MiniMax API key |
+| `LLM_PROVIDER` | No | `minimax` | Primary provider (`minimax`, `gemini`, `openrouter`, `groq`, or `openai`) |
+| `MINIMAX_API_KEY` | For Minimax (User 1) | - | MiniMax Account 1 API key (Token Plan `sk-cp...` or standard key) |
+| `MINIMAX_API_KEY_2` | Optional (User 2) | - | MiniMax Account 2 API key (Fallback 1) |
+| `MINIMAX_MODEL` | No | `MiniMax-M3` | MiniMax model (`MiniMax-M3`, `MiniMax-Text-01`, `MiniMax-M2.7`) |
+| `MINIMAX_API_ENDPOINT` | No | `https://api.minimax.io/v1/chat/completions` | MiniMax API endpoint |
+| `GEMINI_API_KEY` | For Gemini | - | Google Gemini API key (Fallback 2) |
+| `GEMINI_MODEL` | No | `gemini-3.5-flash` | Gemini model |
+| `GEMINI_API_ENDPOINT` | No | `https://generativelanguage.googleapis.com/v1beta/openai/chat/completions` | Gemini OpenAI-compatible endpoint |
+| `OPENROUTER_API_KEY` | For OpenRouter | - | OpenRouter API key (Fallback 3) |
+| `OPENROUTER_MODEL` | No | `openrouter/free` | OpenRouter model |
+| `GROQ_API_KEY` | For Groq | - | Groq API key (Fallback 4) |
+| `GROQ_MODEL` | No | `llama-3.1-8b-instant` | Groq model |
 | `OPENAI_API_KEY` | For OpenAI | - | OpenAI API key |
+| `OPENAI_MODEL` | No | `gpt-4o-mini` | OpenAI model |
 | `DATABASE_URL` | Yes | - | PostgreSQL connection string |
 | `POLL_INTERVAL` | No | `60` | Polling interval in seconds (1-3600) |
 | `APPROVAL_THRESHOLD` | No | `80` | Score threshold for approval (0-100) |
@@ -69,6 +79,74 @@ All configuration via environment variables in `.env`:
 | `MAX_RESPONSE_TOKENS` | No | `1000` | Max tokens for AI response (100-4000) |
 | `MAX_PATCH_CHARS_PER_FILE` | No | `1500` | Max characters per file patch (200-20000) |
 | `NODE_ENV` | No | `development` | Environment |
+
+## ⚡ AI Provider Priority Flow & Speed Comparison
+
+The AI reviewer implements a **dynamic runtime fallback chain**. When a PR review is triggered:
+1. It starts with your configured `LLM_PROVIDER` (default: `minimax-1`).
+2. If the active provider hits a rate limit (`429`), quota limit, or error, it automatically fails over to the next provider in the chain.
+3. Providers without keys configured in `.env` are automatically skipped.
+
+```text
+┌─────────────────────────┐
+│ 1. MiniMax Account 1    │ ──(Rate limit / 429 / Error)──►
+└─────────────────────────┘
+┌─────────────────────────┐
+│ 2. MiniMax Account 2    │ ──(Rate limit / 429 / Error)──►
+└─────────────────────────┘
+┌─────────────────────────┐
+│ 3. Google Gemini        │ ──(Rate limit / 429 / Error)──►
+└─────────────────────────┘
+┌─────────────────────────┐
+│ 4. OpenRouter           │ ──(Rate limit / 429 / Error)──►
+└─────────────────────────┘
+┌─────────────────────────┐
+│ 5. Groq                 │ ──(Rate limit / 429 / Error)──►
+└─────────────────────────┘
+┌─────────────────────────┐
+│ 6. OpenAI (Optional)    │
+└─────────────────────────┘
+```
+
+### 🏎️ Which Provider Works Fast? (Speed & Latency Comparison)
+
+| Provider | Default Model | Average Latency | Speed Ranking | Best Used For | Notes |
+|---|---|---|---|---|---|
+| **Groq** | `llama-3.1-8b-instant` | **~1 - 2s** | ⚡⚡⚡ **Fastest** | Instant reviews, rapid feedback | LPU hardware acceleration; free tier has 30 RPM / 6K TPM limit |
+| **Gemini** | `gemini-3.5-flash` | **~2 - 3s** | ⚡⚡⚡ **Ultra Fast** | Large PR diffs, high throughput | Generous rate limits and massive token context |
+| **OpenRouter** | `openrouter/free` | **~2 - 4s** | ⚡⚡ **Very Fast** | Free multi-model routing, reliable fallback | Automatically routes to best available free model |
+| **OpenAI** | `gpt-4o-mini` | **~2 - 4s** | ⚡⚡ **Very Fast** | Reliable, consistent reviews | Cost-effective and stable |
+| **MiniMax** | `MiniMax-Text-01` | **~2 - 4s** | ⚡⚡ **Fast** | Fast production reviews | High quality code review without chain-of-thought overhead |
+| **MiniMax** | `MiniMax-M3` | **~4 - 7s** | 🧠 **Deep Reasoning** | In-depth architectural & security reviews | Produces reasoning thought tokens before final review verdict |
+
+> 💡 **Recommendation for Fastest Speed**: If you want the fastest possible reviews, set `LLM_PROVIDER=groq` or `LLM_PROVIDER=gemini` in your `.env`. If you want deeper reasoning reviews, leave default `LLM_PROVIDER=minimax` (with `MiniMax-M3`).
+
+### 📡 Health Check & Multi-Provider Monitoring
+
+You can inspect the live health and latency of all configured providers at `GET /health` (`http://localhost:5999/health`):
+
+```json
+{
+  "status": "healthy",
+  "checks": {
+    "github": {
+      "status": "healthy",
+      "latencySeconds": 1
+    },
+    "ai": {
+      "provider": "minimax-user1 (fallback: groq)",
+      "status": "healthy",
+      "latencySeconds": 5,
+      "providers": [
+        { "name": "minimax-user1", "status": "healthy", "latencySeconds": 5 },
+        { "name": "groq", "status": "healthy", "latencySeconds": 1 }
+      ]
+    }
+  }
+}
+```
+
+*Note: The overall system status is `healthy` as long as GitHub and **at least one** AI provider is operational.*
 
 ## Running the Application
 

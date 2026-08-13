@@ -187,7 +187,7 @@ export function buildReviewBody(
   const header = `## AI Based Code Review ${emoji}\n**Score:** ${decision.score}/100 | **Decision:** ${decision.decision}\n`;
 
   if (aiResult.overallComment) {
-    return `${header}\n${aiResult.overallComment}\n\n---\n*AI Review powered by ${providerName}*`;
+    return `${header}\n${aiResult.overallComment}`;
   }
 
   const lines: string[] = [header, ''];
@@ -232,9 +232,7 @@ export function buildReviewBody(
   } else {
     lines.push('Please address the issues above before merging.');
   }
-  lines.push('');
 
-  lines.push('---', `*AI Review powered by ${providerName}*`);
   return lines.join('\n');
 }
 

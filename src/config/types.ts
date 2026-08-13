@@ -21,13 +21,23 @@ export interface RepositoryConfig {
 }
 
 export interface AIConfig {
-  provider: 'minimax' | 'groq' | 'openai';
+  provider: 'minimax' | 'gemini' | 'openrouter' | 'groq' | 'openai';
   minimaxApiKey: string;
+  minimaxApiKey2?: string;
   minimaxModel: string;
+  minimaxEndpoint?: string;
+  geminiApiKey?: string;
+  geminiModel?: string;
+  geminiEndpoint?: string;
+  openrouterApiKey?: string;
+  openrouterModel?: string;
+  openrouterEndpoint?: string;
   groqApiKey: string;
   groqModel: string;
+  groqEndpoint?: string;
   openaiApiKey: string;
   openaiModel: string;
+  openaiEndpoint?: string;
   approvalThreshold: number;
   maxPromptTokens: number;
   maxResponseTokens: number;

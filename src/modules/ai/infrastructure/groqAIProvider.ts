@@ -1,12 +1,20 @@
-import { BaseAIProvider, AIResponse, BaseAIProviderOptions } from './baseAIProvider';
+import { BaseAIProvider, BaseAIProviderOptions } from './baseAIProvider';
+import { AIReviewResult } from '../application/aiTypes';
 import { Logger } from '../../../shared/types/logger';
 
 export class GroqAIProvider extends BaseAIProvider {
   protected nameValue = 'groq';
-  protected endpoint = 'https://api.groq.com/openai/v1/chat/completions';
+  protected endpoint: string;
 
-  constructor(apiKey: string, logger: Logger, model = 'llama-3.1-8b-instant', options: BaseAIProviderOptions = {}) {
+  constructor(
+    apiKey: string,
+    logger: Logger,
+    model = 'llama-3.1-8b-instant',
+    endpoint = 'https://api.groq.com/openai/v1/chat/completions',
+    options: BaseAIProviderOptions = {}
+  ) {
     super(apiKey, logger, model);
+    this.endpoint = endpoint || 'https://api.groq.com/openai/v1/chat/completions';
     this.applyOptions(options);
   }
 
@@ -29,10 +37,19 @@ export class GroqAIProvider extends BaseAIProvider {
     };
   }
 
-  parseResponse(response: any): AIResponse {
+  parseResponse(response: any): AIReviewResult {
+    if (response?.error) {
+      const errMsg = typeof response.error === 'string'
+        ? response.error
+        : response.error.message || JSON.stringify(response.error);
+      throw new Error(`Groq API error: ${errMsg}`);
+    }
+
     const content = response.choices?.[0]?.message?.content;
     if (!content) {
-      throw new Error('Empty response from Groq API');
+      throw new Error(
+        `Empty response from Groq API: ${JSON.stringify(response).slice(0, 300)}`
+      );
     }
     return this.parseAIReviewResponse(content);
   }

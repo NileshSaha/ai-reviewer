@@ -306,4 +306,46 @@ describe('createHealthChecker', () => {
 
     expect(report.checks.ai.provider).toBe('openai');
   });
+
+  it('lists individual provider healths and is healthy if any provider works', async () => {
+    const clock = createMockClock();
+    const logger = createMockLogger();
+    const github = createMockGitHub(async () => ({ valid: true }));
+
+    const p1 = createMockAI(async () => ({ valid: false, error: 'Auth failed (401)' }), 'minimax-user1');
+    const p2 = createMockAI(async () => ({ valid: true }), 'groq');
+
+    const fallbackProvider: any = {
+      name: () => 'minimax-user1 (fallback: groq)',
+      validateApiKey: jest.fn().mockResolvedValue({ valid: true }),
+      generateReview: jest.fn(),
+      getEntries: () => [
+        { name: 'minimax-user1', provider: p1.provider },
+        { name: 'groq', provider: p2.provider },
+      ],
+    };
+
+    const check = createHealthChecker({
+      githubClient: github.client,
+      aiProvider: fallbackProvider,
+      logger,
+      clock,
+    });
+
+    const report = await check();
+
+    expect(report.status).toBe('healthy');
+    expect(report.checks.ai.status).toBe('healthy');
+    expect(report.checks.ai.providers).toBeDefined();
+    expect(report.checks.ai.providers).toHaveLength(2);
+    expect(report.checks.ai.providers![0]).toMatchObject({
+      name: 'minimax-user1',
+      status: 'unhealthy',
+      error: 'Auth failed (401)',
+    });
+    expect(report.checks.ai.providers![1]).toMatchObject({
+      name: 'groq',
+      status: 'healthy',
+    });
+  });
 });
