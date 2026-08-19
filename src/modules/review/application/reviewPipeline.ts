@@ -5,6 +5,7 @@ import { AIProvider, PRDetails, DiffContent } from '../../ai/application/aiProvi
 import { ReviewRepository } from '../application/reviewRepository';
 import { Scorer, ScoringResult } from '../domain/scorer';
 import { FileFilter } from '../domain/fileFilter';
+import { buildValidDiffLinesMap, normalizeFilePath } from '../domain/diffLineValidator';
 import { Logger } from '../../../shared/types/logger';
 import { Clock } from '../../../shared/types/clock';
 import { GitHubReviewInput } from '../../github/domain/githubEntities';
@@ -88,7 +89,15 @@ export function createReviewPipeline(deps: ReviewPipelineDeps) {
       const decision = scorer.decide(aiResult.score, aiResult.summary, aiResult.verdict);
 
       const reviewBody = buildReviewBody(decision, aiResult, aiProvider.name());
-      const inlineComments = buildInlineComments(decision, aiResult.issues);
+      const validDiffLinesMap = buildValidDiffLinesMap(filteredFiles);
+      const inlineComments = buildInlineComments(decision, aiResult.issues, validDiffLinesMap);
+
+      if (decision.decision === 'REQUEST_CHANGES' && aiResult.issues.length > 0) {
+        log.debug('Validated inline comments against diff hunks', {
+          totalIssues: aiResult.issues.length,
+          validInlineComments: inlineComments.length,
+        });
+      }
 
       const reviewInput: GitHubReviewInput = {
         body: reviewBody,
@@ -96,11 +105,33 @@ export function createReviewPipeline(deps: ReviewPipelineDeps) {
         comments: inlineComments.length > 0 ? inlineComments : undefined,
       };
 
-      await githubClient.createReview(owner, repo, prNumber, reviewInput);
+      try {
+        await githubClient.createReview(owner, repo, prNumber, reviewInput);
+      } catch (reviewErr: any) {
+        const errorMsg = reviewErr?.message || String(reviewErr);
+        if (
+          reviewInput.comments &&
+          reviewInput.comments.length > 0 &&
+          (errorMsg.includes('Line could not be resolved') ||
+            errorMsg.includes('422') ||
+            errorMsg.includes('Unprocessable Entity') ||
+            errorMsg.includes('Validation Failed'))
+        ) {
+          log.warn(
+            `Posting review with inline comments failed (${errorMsg}), retrying without inline comments`,
+            { error: errorMsg }
+          );
+          reviewInput.comments = undefined;
+          await githubClient.createReview(owner, repo, prNumber, reviewInput);
+        } else {
+          throw reviewErr;
+        }
+      }
+
       log.info(`GitHub review posted`, {
         decision: decision.decision,
         score: aiResult.score,
-        inline_comment_count: inlineComments.length,
+        inline_comment_count: reviewInput.comments?.length ?? 0,
         reason_truncated: decision.reason.substring(0, 100),
       });
 
@@ -250,14 +281,27 @@ export function buildReviewBody(
 
 export function buildInlineComments(
   decision: ScoringResult,
-  issues: ReviewIssue[]
+  issues: ReviewIssue[],
+  validDiffLinesMap?: Map<string, Set<number>>
 ): Array<{ path: string; line: number; body: string }> {
   if (decision.decision !== 'REQUEST_CHANGES') return [];
 
   const severityEmoji: Record<string, string> = { critical: '🔴', major: '🟡', minor: '🟢' };
 
   return issues
-    .filter((issue) => issue.line && issue.line > 0)
+    .filter((issue) => {
+      if (!issue.line || issue.line <= 0 || !Number.isInteger(issue.line)) {
+        return false;
+      }
+      if (validDiffLinesMap) {
+        const normalized = normalizeFilePath(issue.file);
+        const validLines = validDiffLinesMap.get(normalized);
+        if (!validLines || !validLines.has(issue.line)) {
+          return false;
+        }
+      }
+      return true;
+    })
     .map((issue) => {
       const icon = severityEmoji[issue.severity] ?? '🟢';
       const label = issue.severity.charAt(0).toUpperCase() + issue.severity.slice(1);
@@ -265,6 +309,6 @@ export function buildInlineComments(
       if (issue.suggestion) {
         body += `\n\n> **Suggestion:** ${issue.suggestion}`;
       }
-      return { path: issue.file, line: issue.line!, body };
+      return { path: normalizeFilePath(issue.file), line: issue.line!, body };
     });
 }

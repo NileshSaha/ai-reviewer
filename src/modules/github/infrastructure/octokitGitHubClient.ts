@@ -197,32 +197,78 @@ export class OctokitGitHubClient implements GitHubClient {
     prNumber: number,
     review: GitHubReviewInput
   ): Promise<GitHubReview> {
-    const response = await this.requestWithRetry(() =>
-      this.client.pulls.createReview({
-        owner,
-        repo,
-        pull_number: prNumber,
-        body: review.body,
-        event: review.event,
-        comments: review.comments?.map((c) => ({
-          path: c.path,
-          line: c.line,
-          body: c.body,
-        })),
-      })
-    );
+    const hasComments = !!(review.comments && review.comments.length > 0);
+    try {
+      const response = await this.requestWithRetry(() =>
+        this.client.pulls.createReview({
+          owner,
+          repo,
+          pull_number: prNumber,
+          body: review.body,
+          event: review.event,
+          comments: hasComments
+            ? review.comments!.map((c) => ({
+                path: c.path,
+                line: c.line,
+                body: c.body,
+              }))
+            : undefined,
+        })
+      );
 
-    return {
-      id: response.data.id,
-      user: {
-        login: response.data.user?.login ?? 'unknown',
-        id: response.data.user?.id ?? 0,
-        avatarUrl: response.data.user?.avatar_url ?? '',
-      },
-      body: response.data.body,
-      event: review.event,
-      submittedAt: new Date(response.data.submitted_at ?? Date.now()),
-    };
+      return {
+        id: response.data.id,
+        user: {
+          login: response.data.user?.login ?? 'unknown',
+          id: response.data.user?.id ?? 0,
+          avatarUrl: response.data.user?.avatar_url ?? '',
+        },
+        body: response.data.body,
+        event: review.event,
+        submittedAt: new Date(response.data.submitted_at ?? Date.now()),
+      };
+    } catch (error: any) {
+      if (hasComments && this.isCommentResolutionError(error)) {
+        this.logger.warn(
+          `Review submission with inline comments failed (${error?.message ?? error}). Retrying review submission without inline comments.`,
+          { owner, repo, prNumber, commentCount: review.comments!.length }
+        );
+
+        const fallbackResponse = await this.requestWithRetry(() =>
+          this.client.pulls.createReview({
+            owner,
+            repo,
+            pull_number: prNumber,
+            body: review.body,
+            event: review.event,
+          })
+        );
+
+        return {
+          id: fallbackResponse.data.id,
+          user: {
+            login: fallbackResponse.data.user?.login ?? 'unknown',
+            id: fallbackResponse.data.user?.id ?? 0,
+            avatarUrl: fallbackResponse.data.user?.avatar_url ?? '',
+          },
+          body: fallbackResponse.data.body,
+          event: review.event,
+          submittedAt: new Date(fallbackResponse.data.submitted_at ?? Date.now()),
+        };
+      }
+
+      throw error;
+    }
+  }
+
+  private isCommentResolutionError(error: any): boolean {
+    const status = error?.statusCode ?? error?.status;
+    const message = error?.message || String(error);
+    if (status === 422) return true;
+    if (message.includes('Line could not be resolved')) return true;
+    if (message.includes('Unprocessable Entity')) return true;
+    if (message.includes('Validation Failed')) return true;
+    return false;
   }
 
   async getRateLimitStatus(): Promise<{ limit: number; remaining: number; resetAt: Date }> {

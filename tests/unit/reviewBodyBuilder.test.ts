@@ -222,4 +222,42 @@ describe('buildInlineComments', () => {
     const result = makeScoringResult({ decision: 'REQUEST_CHANGES' });
     expect(buildInlineComments(result, [])).toHaveLength(0);
   });
+
+  it('filters out issues not present in validDiffLinesMap', () => {
+    const result = makeScoringResult({ decision: 'REQUEST_CHANGES' });
+    const diffMap = new Map<string, Set<number>>([
+      ['src/auth.ts', new Set([40, 41, 42])],
+      ['src/utils.ts', new Set([1, 2, 3])],
+    ]);
+
+    const comments = buildInlineComments(
+      result,
+      [
+        makeIssue({ severity: 'critical', file: 'src/auth.ts', line: 42, description: 'Valid line in diff' }),
+        makeIssue({ severity: 'major', file: 'src/auth.ts', line: 150, description: 'Line outside diff' }),
+        makeIssue({ severity: 'minor', file: 'src/other.ts', line: 10, description: 'File not in diff' }),
+        makeIssue({ severity: 'minor', file: './src/utils.ts', line: 2, description: 'Relative path valid line' }),
+      ],
+      diffMap
+    );
+
+    expect(comments).toHaveLength(2);
+    expect(comments[0].path).toBe('src/auth.ts');
+    expect(comments[0].line).toBe(42);
+    expect(comments[1].path).toBe('src/utils.ts');
+    expect(comments[1].line).toBe(2);
+  });
+
+  it('filters out non-integer or negative line numbers', () => {
+    const result = makeScoringResult({ decision: 'REQUEST_CHANGES' });
+    const comments = buildInlineComments(result, [
+      makeIssue({ severity: 'minor', file: 'src/a.ts', line: 0, description: 'Zero' }),
+      makeIssue({ severity: 'minor', file: 'src/a.ts', line: -5, description: 'Negative' }),
+      makeIssue({ severity: 'minor', file: 'src/a.ts', line: 12.5, description: 'Float' }),
+      makeIssue({ severity: 'minor', file: 'src/a.ts', line: 10, description: 'Valid' }),
+    ]);
+
+    expect(comments).toHaveLength(1);
+    expect(comments[0].line).toBe(10);
+  });
 });
