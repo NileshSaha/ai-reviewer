@@ -79,9 +79,9 @@ export function loadConfig(): AppConfig {
     throw new ValidationError('MAX_PROMPT_TOKENS must be between 500 and 32000');
   }
 
-  const maxResponseTokens = getEnvInt('MAX_RESPONSE_TOKENS', 1000);
-  if (maxResponseTokens < 100 || maxResponseTokens > 4000) {
-    throw new ValidationError('MAX_RESPONSE_TOKENS must be between 100 and 4000');
+  const maxResponseTokens = getEnvInt('MAX_RESPONSE_TOKENS', 2000);
+  if (maxResponseTokens < 100 || maxResponseTokens > 16000) {
+    throw new ValidationError('MAX_RESPONSE_TOKENS must be between 100 and 16000');
   }
 
   const maxPatchCharsPerFile = getEnvInt('MAX_PATCH_CHARS_PER_FILE', 1500);

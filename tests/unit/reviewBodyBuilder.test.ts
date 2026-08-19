@@ -55,6 +55,22 @@ describe('buildReviewBody', () => {
     expect(body).toContain('Please fix the security issue');
   });
 
+  it('sanitizes <think> tags from overallComment if present', () => {
+    const result = makeScoringResult({ decision: 'APPROVE', score: 90 });
+    const body = buildReviewBody(result, {
+      summary: 'Solid work',
+      strengths: ['Clean code'],
+      issues: [],
+      security: null,
+      performance: null,
+      overallComment: '<think>Internal thought process</think>Everything looks great and ready to merge!',
+    }, 'minimax');
+
+    expect(body).not.toContain('<think>');
+    expect(body).not.toContain('Internal thought process');
+    expect(body).toContain('Everything looks great and ready to merge!');
+  });
+
   it('builds body from fields when overallComment is empty', () => {
     const result = makeScoringResult({ decision: 'APPROVE', score: 85 });
     const body = buildReviewBody(result, {

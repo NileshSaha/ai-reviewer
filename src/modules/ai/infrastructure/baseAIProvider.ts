@@ -226,17 +226,38 @@ export abstract class BaseAIProvider {
 
   protected parseAIReviewResponse(content: string): AIReviewResult {
     try {
-      // 1. Strip reasoning/thinking tags emitted by reasoning models (e.g. <think>...</think>)
-      let cleaned = content
+      // 1. Strip reasoning/thinking tags emitted by reasoning models (e.g. <think>...</think>, <thought>...</thought>, <reasoning>...</reasoning>)
+      let cleaned = (content || '')
         .replace(/<think>[\s\S]*?<\/think>/gi, '')
         .replace(/<thought>[\s\S]*?<\/thought>/gi, '')
+        .replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '')
         .trim();
+
+      // 1b. If unclosed reasoning tags remain, strip up to the first '{' if one exists
+      if (/<think>|<thought>|<reasoning>/i.test(cleaned)) {
+        const firstBrace = cleaned.indexOf('{');
+        if (firstBrace !== -1) {
+          cleaned = cleaned.substring(firstBrace);
+        } else {
+          cleaned = cleaned
+            .replace(/<think>[\s\S]*$/gi, '')
+            .replace(/<thought>[\s\S]*$/gi, '')
+            .replace(/<reasoning>[\s\S]*$/gi, '')
+            .trim();
+        }
+      }
 
       // 2. Extract JSON code block if wrapped in markdown fences
       const jsonBlockMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
       if (jsonBlockMatch && jsonBlockMatch[1]) {
         cleaned = jsonBlockMatch[1].trim();
       } else {
+        // Handle unclosed markdown fence (e.g. ```json { ... } without closing ```)
+        const unclosedFenceMatch = cleaned.match(/```(?:json)?\s*([\s\S]*)/i);
+        if (unclosedFenceMatch && unclosedFenceMatch[1] && unclosedFenceMatch[1].includes('{')) {
+          cleaned = unclosedFenceMatch[1].trim();
+        }
+
         // 3. Extract the outermost JSON object if surrounding text exists
         const firstBrace = cleaned.indexOf('{');
         const lastBrace = cleaned.lastIndexOf('}');
@@ -253,7 +274,15 @@ export abstract class BaseAIProvider {
           .trim();
       }
 
-      const parsed = JSON.parse(cleaned);
+      // 4. Sanitize minor JSON syntax issues: trailing commas before } or ]
+      const sanitized = cleaned.replace(/,\s*([}\]])/g, '$1');
+
+      let parsed: any;
+      try {
+        parsed = JSON.parse(sanitized);
+      } catch {
+        parsed = JSON.parse(cleaned);
+      }
 
       const verdict: ReviewDecision = parsed.verdict === 'REQUEST_CHANGES' ? 'REQUEST_CHANGES' : 'APPROVE';
       const score = this.normalizeScore(parsed.score);
@@ -308,16 +337,33 @@ export abstract class BaseAIProvider {
       return { score, summary, verdict, strengths, issues, security, performance, comments, overallComment };
     } catch {
       this.logger.warn('Failed to parse AI response as JSON, using raw text fallback', { content });
+
+      // Clean content for fallback: remove thinking tags, markdown fences, etc.
+      const cleanContent = (content || '')
+        .replace(/<think>[\s\S]*?<\/think>/gi, '')
+        .replace(/<thought>[\s\S]*?<\/thought>/gi, '')
+        .replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '')
+        .replace(/<think>[\s\S]*$/gi, '')
+        .replace(/<thought>[\s\S]*$/gi, '')
+        .replace(/<reasoning>[\s\S]*$/gi, '')
+        .replace(/```(?:json)?/gi, '')
+        .replace(/```/g, '')
+        .trim();
+
+      const summaryText = cleanContent
+        ? cleanContent.substring(0, 500)
+        : 'Automated review completed. Please review pull request changes.';
+
       return {
         score: 50,
-        summary: content.substring(0, 500),
+        summary: summaryText,
         verdict: 'REQUEST_CHANGES',
         strengths: [],
         issues: [],
         security: null,
         performance: null,
         comments: [],
-        overallComment: content.substring(0, 2000),
+        overallComment: '',
       };
     }
   }

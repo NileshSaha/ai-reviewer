@@ -20,8 +20,8 @@ export class MinimaxAIProvider extends BaseAIProvider {
 
   protected override applyOptions(opts: BaseAIProviderOptions): void {
     super.applyOptions(opts);
-    if (!opts.maxResponseTokens || this.maxResponseTokens < 2500) {
-      this.maxResponseTokens = Math.max(this.maxResponseTokens, 3000);
+    if (!opts.maxResponseTokens || this.maxResponseTokens < 4096) {
+      this.maxResponseTokens = Math.max(this.maxResponseTokens, 4096);
     }
   }
 
@@ -39,6 +39,8 @@ export class MinimaxAIProvider extends BaseAIProvider {
         },
       ],
       temperature: 0.3,
+      response_format: { type: 'json_object' },
+      reasoning_split: true,
       max_tokens: maxResponseTokens ?? this.maxResponseTokens,
     };
   }
@@ -57,12 +59,20 @@ export class MinimaxAIProvider extends BaseAIProvider {
       throw new Error(`MiniMax API error: ${errMsg}`);
     }
 
-    const content = response.choices?.[0]?.message?.content;
+    const message = response.choices?.[0]?.message;
+    const content = message?.content;
     if (!content) {
       throw new Error(
         `Empty response from Minimax API: ${JSON.stringify(response).slice(0, 300)}`
       );
     }
+
+    if (message?.reasoning_details || message?.reasoning_content) {
+      this.logger.debug('MiniMax returned separate reasoning stream', {
+        reasoning_length: (message.reasoning_details || message.reasoning_content || '').length,
+      });
+    }
+
     return this.parseAIReviewResponse(content);
   }
 }

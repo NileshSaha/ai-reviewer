@@ -148,7 +148,7 @@ describe('parseAIReviewResponse', () => {
     expect(result.performance).toBe('N+1 queries');
   });
 
-  it('handles malformed JSON with raw fallback', () => {
+  it('handles malformed JSON with clean fallback', () => {
     const input = '{This is not valid JSON}';
     const result = parser.parseTestResponse(input);
 
@@ -160,7 +160,39 @@ describe('parseAIReviewResponse', () => {
     expect(result.security).toBeNull();
     expect(result.performance).toBeNull();
     expect(result.comments).toEqual([]);
-    expect(result.overallComment).toBe(input.substring(0, 2000));
+    expect(result.overallComment).toBe('');
+  });
+
+  it('strips <think>...</think> and <thought>...</thought> reasoning tags', () => {
+    const input = '<think>Let me analyze the PR carefully...</think>\n{"score": 85, "summary": "Great", "verdict": "APPROVE", "strengths": [], "issues": [], "security": null, "performance": null, "comments": []}';
+    const result = parser.parseTestResponse(input);
+    expect(result.score).toBe(85);
+    expect(result.summary).toBe('Great');
+  });
+
+  it('handles unclosed <think> tag followed by JSON', () => {
+    const input = '<think>Thinking about changes...\n{"score": 90, "summary": "Looks good", "verdict": "APPROVE", "strengths": ["Clean code"], "issues": [], "security": null, "performance": null, "comments": []}';
+    const result = parser.parseTestResponse(input);
+    expect(result.score).toBe(90);
+    expect(result.summary).toBe('Looks good');
+    expect(result.strengths).toEqual(['Clean code']);
+  });
+
+  it('sanitizes trailing commas in JSON output', () => {
+    const input = '{"score": 95, "summary": "Excellent", "verdict": "APPROVE", "strengths": ["Fast",], "issues": [],}';
+    const result = parser.parseTestResponse(input);
+    expect(result.score).toBe(95);
+    expect(result.summary).toBe('Excellent');
+    expect(result.strengths).toEqual(['Fast']);
+  });
+
+  it('cleans truncated <think> content on fallback without leaking <think> tag', () => {
+    const input = '<think>Let me analyze this pull request carefully.\n## PR Overview\nFile 1: constant.ts\nexport const X = "';
+    const result = parser.parseTestResponse(input);
+    expect(result.score).toBe(50);
+    expect(result.verdict).toBe('REQUEST_CHANGES');
+    expect(result.summary).not.toContain('<think>');
+    expect(result.overallComment).toBe('');
   });
 
   it('handles null issues gracefully', () => {

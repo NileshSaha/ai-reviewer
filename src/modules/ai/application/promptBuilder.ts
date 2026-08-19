@@ -72,7 +72,7 @@ ${diffText}
 
 ## Output Requirements
 
-Return ONLY valid JSON with no markdown wrapping. Use this exact structure:
+Return ONLY valid JSON with no markdown wrapping and no chain-of-thought tags. Use this exact structure:
 
 {
   "verdict": "APPROVE or REQUEST_CHANGES",
@@ -96,39 +96,8 @@ Return ONLY valid JSON with no markdown wrapping. Use this exact structure:
       "line": 42,
       "text": "short, actionable inline comment for GitHub"
     }
-  ],
-  "overallComment": "see template below"
+  ]
 }
-
-## overallComment Template
-
-The overallComment field MUST be a well-formatted GitHub markdown comment using this exact structure:
-
-## 🔍 Code Review Summary
-
-### 📋 Overview
-[2-3 sentence assessment]
-
-### ✅ Strengths
-- [strength 1]
-- [strength 2]
-
-### ⚠️ Issues Found
-
-| Severity | File | Line | Issue | Suggestion |
-|----------|------|------|-------|------------|
-| 🔴 Critical | \`filename\` | 42 | description | suggestion |
-| 🟡 Major | \`filename\` | 17 | description | suggestion |
-| 🟢 Minor | \`filename\` | 88 | description | suggestion |
-
-### 🔒 Security
-[security notes or "No security concerns identified"]
-
-### ⚡ Performance
-[performance notes or "No performance concerns identified"]
-
-### 📝 Verdict
-[APPROVE: "This PR looks good to merge." / REQUEST_CHANGES: "Please address the issues above before merging."]
 
 ## Guidelines
 - Include inline comments (in the "comments" field) only for significant issues. Skip style-only nits in inline comments.

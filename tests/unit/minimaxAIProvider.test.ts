@@ -35,6 +35,8 @@ describe('MinimaxAIProvider', () => {
     expect(body.model).toBe('MiniMax-M3');
     expect(body.max_tokens).toBe(500);
     expect(body.temperature).toBe(0.3);
+    expect(body.response_format).toEqual({ type: 'json_object' });
+    expect(body.reasoning_split).toBe(true);
     expect(body.messages).toHaveLength(2);
     expect(body.messages[0].role).toBe('system');
     expect(body.messages[1].role).toBe('user');

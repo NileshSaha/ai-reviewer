@@ -186,8 +186,20 @@ export function buildReviewBody(
   const emoji = decision.decision === 'APPROVE' ? '✅' : '❌';
   const header = `## AI Based Code Review ${emoji}\n**Score:** ${decision.score}/100 | **Decision:** ${decision.decision}\n`;
 
-  if (aiResult.overallComment) {
-    return `${header}\n${aiResult.overallComment}`;
+  let customComment = (aiResult.overallComment || '').trim();
+  if (customComment) {
+    customComment = customComment
+      .replace(/<think>[\s\S]*?<\/think>/gi, '')
+      .replace(/<thought>[\s\S]*?<\/thought>/gi, '')
+      .replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '')
+      .replace(/<think>[\s\S]*$/gi, '')
+      .replace(/<thought>[\s\S]*$/gi, '')
+      .replace(/<reasoning>[\s\S]*$/gi, '')
+      .trim();
+  }
+
+  if (customComment) {
+    return `${header}\n${customComment}`;
   }
 
   const lines: string[] = [header, ''];
