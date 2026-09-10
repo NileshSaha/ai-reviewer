@@ -35,6 +35,7 @@ export interface PRDetails {
   author: string;
   baseBranch: string;
   headBranch: string;
+  lastReviewedSha?: string;
 }
 
 export interface DiffContent {

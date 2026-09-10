@@ -19,6 +19,7 @@ export class SequelizeReviewRepository implements ReviewRepository {
       prNumber: review.prNumber,
       headSha: review.headSha,
       reviewedAt: review.reviewedAt,
+      provider: review.provider ?? null,
     });
 
     return this.mapToEntity(model);
@@ -56,6 +57,7 @@ export class SequelizeReviewRepository implements ReviewRepository {
       prNumber: review.prNumber,
       headSha: review.headSha,
       reviewedAt: review.reviewedAt,
+      provider: review.provider ?? null,
     });
 
     return this.mapToEntity(model);
@@ -80,6 +82,7 @@ export class SequelizeReviewRepository implements ReviewRepository {
       prNumber: model.prNumber,
       headSha: model.headSha,
       reviewedAt: model.reviewedAt,
+      provider: model.provider ?? null,
     };
   }
 }

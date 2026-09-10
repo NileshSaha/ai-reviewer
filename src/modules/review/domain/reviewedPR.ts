@@ -4,6 +4,7 @@ export interface ReviewedPR {
   prNumber: number;
   headSha: string;
   reviewedAt: Date;
+  provider?: string | null;
 }
 
 export interface ReviewedPRCreate {
@@ -11,4 +12,5 @@ export interface ReviewedPRCreate {
   prNumber: number;
   headSha: string;
   reviewedAt: Date;
+  provider?: string | null;
 }

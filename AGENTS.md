@@ -130,9 +130,10 @@ src/
 │  5. Call AI provider (Minimax/Groq/OpenAI)                      │
 │  6. Parse AI response                                           │
 │  7. Decide (APPROVE if score >= 80, else REQUEST_CHANGES)      │
-│  8. Post review to GitHub                                       │
-│  9. Persist review state                                       │
-│  10. Publish ReviewCompleted/Failed event                       │
+│  8. Map to GitHub event (see Decision Mapping below)            │
+│  9. Post review to GitHub (score hidden if score < threshold)  │
+│  10. Persist review state                                       │
+│  11. Publish ReviewCompleted/Failed event                       │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -165,8 +166,8 @@ src/
     correlationId: string,
     repository: string,
     prNumber: number,
-    decision: 'APPROVE' | 'REQUEST_CHANGES',
-    score: number,
+    decision: 'APPROVE' | 'REQUEST_CHANGES',  // Scoring decision (may differ from GitHub event)
+    score: number,                            // Raw AI score
     commentsCount: number,
     completedAt: string
   }
@@ -184,6 +185,33 @@ src/
   }
 }
 ```
+
+---
+
+## Decision Mapping
+
+The pipeline converts the raw scoring decision into a GitHub review `event` and a body status label. Two rules apply:
+
+**Event rule** (only when scorer decision is `REQUEST_CHANGES`):
+- `COMMENT` — no critical issues
+- `REQUEST_CHANGES` — has a critical issue (severity `critical`) or `aiResult.security !== null`
+
+**Score-hide rule** (independent of event):
+- Body omits the `**Score:** N/100` line when `aiResult.score < SKIP_REVIEW_BELOW_SCORE` (default 70), regardless of event type or criticality.
+
+| Score band | Scorer decision | Critical? | GitHub `event` | Body `Status:` label | Show score? |
+|------------|-----------------|-----------|----------------|----------------------|-------------|
+| `< SKIP_REVIEW_BELOW_SCORE` | REQUEST_CHANGES | no | `COMMENT` | `Suggestions` | **No** |
+| `< SKIP_REVIEW_BELOW_SCORE` | REQUEST_CHANGES | yes | `REQUEST_CHANGES` | `Changes Requested` | **No** |
+| `70-79` (above hide threshold) | REQUEST_CHANGES | no | `COMMENT` | `Suggestions` | Yes |
+| `70-79` | REQUEST_CHANGES | yes | `REQUEST_CHANGES` | `Changes Requested` | Yes |
+| `≥ APPROVAL_THRESHOLD` | APPROVE | any | `APPROVE` | `Approved` | Yes |
+| `≥ APPROVAL_THRESHOLD` | REQUEST_CHANGES (AI override) | no | `COMMENT` | `Suggestions` | Yes |
+| `≥ APPROVAL_THRESHOLD` | REQUEST_CHANGES (AI override) | yes | `REQUEST_CHANGES` | `Changes Requested` | Yes |
+
+The body never contains the literal token `REQUEST_CHANGES` — the header shows the soft `Suggestions` / `Changes Requested` label and the verdict section uses neutral phrasing (`Suggestions are provided above for consideration.`). Only the GitHub `event` enum value (which the API requires) uses `REQUEST_CHANGES` when truly blocking the PR.
+
+The `ReviewCompletedEvent.decision` field reflects the **scoring** decision, not the GitHub event. Subscribers comparing scores to `APPROVAL_THRESHOLD` see the raw decision; if you need to know whether GitHub was blocked, inspect `event` separately.
 
 ---
 
@@ -255,6 +283,7 @@ All configuration via environment variables:
 | `DATABASE_URL` | Yes | - | PostgreSQL connection string |
 | `POLL_INTERVAL` | No | `60` | Polling interval in seconds (1-3600) |
 | `APPROVAL_THRESHOLD` | No | `80` | Score threshold for approval (0-100) |
+| `SKIP_REVIEW_BELOW_SCORE` | No | `70` | Hide the score line in the review body when score is below this value (0-100). The review is still posted; only the score is omitted. |
 | `REPOSITORIES` | No | - | List of repos to monitor (one per line, format: `owner/repo`) |
 | `PORT` | No | `3000` | HTTP server port |
 | `NODE_ENV` | No | `development` | Environment |

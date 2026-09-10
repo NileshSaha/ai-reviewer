@@ -39,6 +39,7 @@ export interface AIConfig {
   openaiModel: string;
   openaiEndpoint?: string;
   approvalThreshold: number;
+  skipReviewBelowScore: number;
   maxPromptTokens: number;
   maxResponseTokens: number;
   maxPatchCharsPerFile: number;

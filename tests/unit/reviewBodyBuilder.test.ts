@@ -1,4 +1,4 @@
-import { buildReviewBody, buildInlineComments } from '../../src/modules/review/application/reviewPipeline';
+import { buildReviewBody, buildInlineComments, mapDecisionToGitHubEvent, deriveStatusLabel } from '../../src/modules/review/application/reviewPipeline';
 import { ScoringResult } from '../../src/modules/review/domain/scorer';
 import { ReviewIssue } from '../../src/modules/ai/application/aiTypes';
 
@@ -36,6 +36,7 @@ describe('buildReviewBody', () => {
 
     expect(body).toContain('## AI Based Code Review ✅');
     expect(body).toContain('**Score:** 92/100');
+    expect(body).toContain('**Status:** Approved');
     expect(body).toContain('Custom formatted comment from AI');
     expect(body).not.toContain('AI Review powered by');
   });
@@ -52,7 +53,70 @@ describe('buildReviewBody', () => {
     }, 'groq');
 
     expect(body).toContain('## AI Based Code Review ❌');
+    expect(body).toContain('**Status:** Changes Requested');
     expect(body).toContain('Please fix the security issue');
+  });
+
+  it('renders Status: Suggestions when mapped to COMMENT event', () => {
+    const result = makeScoringResult({ decision: 'REQUEST_CHANGES', score: 65 });
+    const body = buildReviewBody(result, {
+      summary: 'Needs polish',
+      strengths: ['Clean code'],
+      issues: [makeIssue({ severity: 'minor', description: 'Rename variable' })],
+      security: null,
+      performance: null,
+      overallComment: '',
+    }, 'groq', 'COMMENT', true);
+
+    expect(body).toContain('## AI Based Code Review 💡');
+    expect(body).toContain('**Status:** Suggestions');
+    expect(body).not.toContain('**Score:**');
+    expect(body).toContain('Suggestions are provided above for consideration');
+  });
+
+  it('hides score line when hideScore is true regardless of event type', () => {
+    const result = makeScoringResult({ decision: 'REQUEST_CHANGES', score: 55 });
+    const body = buildReviewBody(result, {
+      summary: 'Critical issue',
+      strengths: [],
+      issues: [makeIssue({ severity: 'critical', description: 'SQL injection' })],
+      security: null,
+      performance: null,
+      overallComment: '',
+    }, 'groq', 'REQUEST_CHANGES', true);
+
+    expect(body).toContain('**Status:** Changes Requested');
+    expect(body).not.toContain('**Score:**');
+  });
+
+  it('includes score line when hideScore is false', () => {
+    const result = makeScoringResult({ decision: 'APPROVE', score: 88 });
+    const body = buildReviewBody(result, {
+      summary: 'Good',
+      strengths: [],
+      issues: [],
+      security: null,
+      performance: null,
+      overallComment: '',
+    }, 'groq', 'APPROVE', false);
+
+    expect(body).toContain('**Score:** 88/100');
+    expect(body).toContain('**Status:** Approved');
+  });
+
+  it('does not include the literal token REQUEST_CHANGES in the body for COMMENT events', () => {
+    const result = makeScoringResult({ decision: 'REQUEST_CHANGES', score: 72 });
+    const body = buildReviewBody(result, {
+      summary: 'Minor issues',
+      strengths: [],
+      issues: [makeIssue({ severity: 'minor', description: 'Cleanup' })],
+      security: null,
+      performance: null,
+      overallComment: '',
+    }, 'groq', 'COMMENT', false);
+
+    expect(body).not.toContain('REQUEST_CHANGES');
+    expect(body).toContain('**Status:** Suggestions');
   });
 
   it('sanitizes <think> tags from overallComment if present', () => {
@@ -170,6 +234,58 @@ describe('buildReviewBody', () => {
     }, 'groq');
 
     expect(body).toContain('Add null check');
+  });
+});
+
+describe('mapDecisionToGitHubEvent', () => {
+  function makeAiResult(overrides: { issues?: ReviewIssue[]; security?: string | null } = {}) {
+    return {
+      issues: overrides.issues ?? [],
+      security: overrides.security ?? null,
+    };
+  }
+
+  it('maps APPROVE to APPROVE', () => {
+    const decision = makeScoringResult({ decision: 'APPROVE' });
+    expect(mapDecisionToGitHubEvent(decision, makeAiResult())).toBe('APPROVE');
+  });
+
+  it('maps REQUEST_CHANGES with no critical issues to COMMENT', () => {
+    const decision = makeScoringResult({ decision: 'REQUEST_CHANGES' });
+    const aiResult = makeAiResult({ issues: [makeIssue({ severity: 'minor' })] });
+    expect(mapDecisionToGitHubEvent(decision, aiResult)).toBe('COMMENT');
+  });
+
+  it('maps REQUEST_CHANGES with critical issue to REQUEST_CHANGES', () => {
+    const decision = makeScoringResult({ decision: 'REQUEST_CHANGES' });
+    const aiResult = makeAiResult({ issues: [makeIssue({ severity: 'critical' })] });
+    expect(mapDecisionToGitHubEvent(decision, aiResult)).toBe('REQUEST_CHANGES');
+  });
+
+  it('maps REQUEST_CHANGES with security concern to REQUEST_CHANGES', () => {
+    const decision = makeScoringResult({ decision: 'REQUEST_CHANGES' });
+    const aiResult = makeAiResult({ security: 'Hardcoded API key' });
+    expect(mapDecisionToGitHubEvent(decision, aiResult)).toBe('REQUEST_CHANGES');
+  });
+
+  it('maps REQUEST_CHANGES with major issue (not critical) to COMMENT', () => {
+    const decision = makeScoringResult({ decision: 'REQUEST_CHANGES' });
+    const aiResult = makeAiResult({ issues: [makeIssue({ severity: 'major' })] });
+    expect(mapDecisionToGitHubEvent(decision, aiResult)).toBe('COMMENT');
+  });
+});
+
+describe('deriveStatusLabel', () => {
+  it('returns Approved for APPROVE event', () => {
+    expect(deriveStatusLabel('APPROVE')).toBe('Approved');
+  });
+
+  it('returns Suggestions for COMMENT event', () => {
+    expect(deriveStatusLabel('COMMENT')).toBe('Suggestions');
+  });
+
+  it('returns Changes Requested for REQUEST_CHANGES event', () => {
+    expect(deriveStatusLabel('REQUEST_CHANGES')).toBe('Changes Requested');
   });
 });
 

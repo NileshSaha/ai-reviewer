@@ -55,6 +55,7 @@ export function buildReviewPromptDetailed(
 - **Author:** ${pr.author}
 - **Base Branch:** ${pr.baseBranch}
 - **Head Branch:** ${pr.headBranch}
+${pr.lastReviewedSha ? `- **Incremental Review:** Yes (comparing changes from last reviewed commit ${pr.lastReviewedSha} to current head)` : ''}
 
 ## Code Changes (Diff)
 ${diffText}
@@ -103,7 +104,8 @@ Return ONLY valid JSON with no markdown wrapping and no chain-of-thought tags. U
 - Include inline comments (in the "comments" field) only for significant issues. Skip style-only nits in inline comments.
 - Be specific and actionable in every comment.
 - If the PR is very small or trivial, reflect that in a higher score.
-- If there are no security or performance concerns, set those fields to null (do not invent non-existent issues).`;
+- If there are no security or performance concerns, set those fields to null (do not invent non-existent issues).
+${pr.lastReviewedSha ? `- Note: This is an incremental review. Only the new commits/changes since the last reviewed commit are included in the diff. Focus your review on evaluating these new changes.` : ''}`;
 
   return { prompt, fit };
 }

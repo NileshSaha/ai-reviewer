@@ -15,6 +15,7 @@ import { createReviewPipeline } from './modules/review/application/reviewPipelin
 import { createScheduler } from './modules/scheduler/application/schedulerService';
 import { createHealthChecker } from './modules/health/application/healthChecker';
 import { createExpressApp, errorHandler } from './bootstrap/express';
+import { ReviewRequestedEvent, EVENT_TYPES } from './modules/events/application/types';
 import { Logger } from './shared/types/logger';
 import { Clock } from './shared/types/clock';
 import { UUIDGenerator } from './shared/types/uuid';
@@ -52,6 +53,12 @@ async function main(): Promise<void> {
 
   initReviewedPRModel(sequelize);
   initRepositoryModel(sequelize);
+
+  // Safe schema migration for the new provider column
+  await sequelize.query('ALTER TABLE reviewed_prs ADD COLUMN IF NOT EXISTS provider VARCHAR(100)').catch((err) => {
+    logger.warn('Failed to ensure provider column exists (it might already exist or table is not created yet)', { error: err.message });
+  });
+
   await Promise.all([
     ReviewedPRModel.sync(),
     RepositoryModel.sync(),
@@ -76,6 +83,7 @@ async function main(): Promise<void> {
     reviewRepository,
     eventBus,
     approvalThreshold: config.ai.approvalThreshold,
+    skipReviewBelowScore: config.ai.skipReviewBelowScore,
     logger,
     clock,
   });
@@ -131,6 +139,183 @@ async function main(): Promise<void> {
         timestamp: new Date().toISOString(),
         error: error instanceof Error ? error.message : 'Unknown error',
       });
+    }
+  });
+
+  // Swagger specification JSON
+  app.get('/swagger.json', (_req, res) => {
+    res.json({
+      openapi: '3.0.0',
+      info: {
+        title: 'AI GitHub Reviewer API',
+        version: '1.0.0',
+        description: 'Interactive API console for triggering manual PR reviews and checking service health.',
+      },
+      paths: {
+        '/review': {
+          post: {
+            summary: 'Manually trigger a pull request review',
+            description: 'Triggers a review for the specified GitHub Pull Request URL. Bypasses cooldowns and polling delays but skips if the commit SHA is already reviewed.',
+            requestBody: {
+              required: true,
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      prUrl: {
+                        type: 'string',
+                        example: 'https://github.com/owner/repo/pull/123',
+                        description: 'The full URL of the GitHub pull request to review',
+                      },
+                    },
+                    required: ['prUrl'],
+                  },
+                },
+              },
+            },
+            responses: {
+              200: {
+                description: 'Review triggered or skipped successfully',
+              },
+              400: {
+                description: 'Invalid input or PR URL format',
+              },
+            },
+          },
+        },
+        '/health': {
+          get: {
+            summary: 'Get service health status',
+            responses: {
+              200: {
+                description: 'Health status report',
+              },
+            },
+          },
+        },
+        '/': {
+          get: {
+            summary: 'Get service metadata',
+            responses: {
+              200: {
+                description: 'Service metadata',
+              },
+            },
+          },
+        },
+      },
+    });
+  });
+
+  // Swagger HTML Documentation UI Page
+  app.get('/docs', (_req, res) => {
+    res.send(`
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <title>AI GitHub Reviewer API Docs</title>
+        <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui.css">
+        <style>
+          html { box-sizing: border-box; overflow-y: scroll; }
+          *, *:before, *:after { box-sizing: inherit; }
+          body { margin: 0; background: #fafafa; }
+        </style>
+      </head>
+      <body>
+        <div id="swagger-ui"></div>
+        <script src="https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui-bundle.js"></script>
+        <script src="https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui-standalone-preset.js"></script>
+        <script>
+          window.onload = function() {
+            const ui = SwaggerUIBundle({
+              url: "/swagger.json",
+              dom_id: '#swagger-ui',
+              deepLinking: true,
+              presets: [
+                SwaggerUIBundle.presets.apis,
+                SwaggerUIStandalonePreset
+              ],
+              plugins: [
+                SwaggerUIBundle.plugins.DownloadUrl
+              ],
+              layout: "StandaloneLayout"
+            });
+            window.ui = ui;
+          };
+        </script>
+      </body>
+      </html>
+    `);
+  });
+
+  app.post('/review', async (req, res, next) => {
+    try {
+      const { prUrl } = req.body;
+      if (!prUrl || typeof prUrl !== 'string') {
+        res.status(400).json({ error: 'Missing or invalid prUrl' });
+        return;
+      }
+
+      const match = prUrl.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/i);
+      if (!match) {
+        res.status(400).json({ error: 'Invalid GitHub Pull Request URL format' });
+        return;
+      }
+
+      const owner = match[1];
+      const repo = match[2];
+      const prNumber = parseInt(match[3], 10);
+      const repository = `${owner}/${repo}`;
+
+      logger.info(`Manual review trigger requested for PR: ${prUrl} (${repository}#${prNumber})`);
+
+      const prDetails = await githubClient.getPullRequest(owner, repo, prNumber);
+
+      // Check if this head SHA has already been reviewed
+      const alreadyReviewed = await reviewRepository.hasBeenReviewedWithSameSHA(
+        repository,
+        prNumber,
+        prDetails.headSha
+      );
+
+      if (alreadyReviewed) {
+        logger.info(`PR ${repository}#${prNumber} has already been reviewed with latest SHA ${prDetails.headSha}. Skipping.`);
+        res.json({
+          message: `PR ${repository}#${prNumber} is already reviewed with the latest commit SHA (${prDetails.headSha}). No review triggered.`,
+          headSha: prDetails.headSha,
+        });
+        return;
+      }
+
+      const correlationId = uuidGenerator.generateV4();
+
+      const event: ReviewRequestedEvent = {
+        type: EVENT_TYPES.REVIEW_REQUESTED,
+        payload: {
+          correlationId,
+          repository,
+          prNumber,
+          prTitle: prDetails.title,
+          prBody: prDetails.body,
+          author: prDetails.author.login,
+          baseBranch: prDetails.baseBranch,
+          headBranch: prDetails.headBranch,
+          headSha: prDetails.headSha,
+          requestedAt: clock.nowISO(),
+        },
+      };
+
+      await eventBus.publish(event);
+
+      res.json({
+        message: `Review triggered successfully for ${repository}#${prNumber}`,
+        correlationId,
+        headSha: prDetails.headSha,
+      });
+    } catch (err: any) {
+      next(err);
     }
   });
 

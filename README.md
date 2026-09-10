@@ -70,6 +70,7 @@ All configuration via environment variables in `.env`:
 | `DATABASE_URL` | Yes | - | PostgreSQL connection string |
 | `POLL_INTERVAL` | No | `60` | Polling interval in seconds (1-3600) |
 | `APPROVAL_THRESHOLD` | No | `80` | Score threshold for approval (0-100) |
+| `SKIP_REVIEW_BELOW_SCORE` | No | `70` | Hide the score line in the review body when score is below this value (0-100). The review is still posted; only the score number is omitted. |
 | `REPOSITORIES` | No | - | Comma-separated list of repos to monitor (`owner/repo`) |
 | `PORT` | No | `5999` | HTTP server port |
 | `CONCURRENCY_LIMIT` | No | `2` | Max PRs reviewed simultaneously (1-10) |

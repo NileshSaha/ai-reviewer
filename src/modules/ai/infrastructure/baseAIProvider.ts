@@ -281,7 +281,11 @@ export abstract class BaseAIProvider {
       try {
         parsed = JSON.parse(sanitized);
       } catch {
-        parsed = JSON.parse(cleaned);
+        try {
+          parsed = JSON.parse(cleaned);
+        } catch {
+          parsed = this.repairAndParseJson(cleaned);
+        }
       }
 
       const verdict: ReviewDecision = parsed.verdict === 'REQUEST_CHANGES' ? 'REQUEST_CHANGES' : 'APPROVE';
@@ -366,6 +370,153 @@ export abstract class BaseAIProvider {
         overallComment: '',
       };
     }
+  }
+
+  private repairJson(json: string): string {
+    let cleaned = json.trim();
+    if (!cleaned.startsWith('{') && !cleaned.startsWith('[')) {
+      return cleaned;
+    }
+
+    const stack: ('{' | '[')[] = [];
+    let inString = false;
+    let escaped = false;
+
+    for (let i = 0; i < cleaned.length; i++) {
+      const char = cleaned[i];
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+        } else if (char === '\\') {
+          escaped = true;
+        } else if (char === '"') {
+          inString = false;
+        }
+      } else {
+        if (char === '"') {
+          inString = true;
+        } else if (char === '{') {
+          stack.push('{');
+        } else if (char === '[') {
+          stack.push('[');
+        } else if (char === '}') {
+          if (stack.length > 0 && stack[stack.length - 1] === '{') {
+            stack.pop();
+          }
+        } else if (char === ']') {
+          if (stack.length > 0 && stack[stack.length - 1] === '[') {
+            stack.pop();
+          }
+        }
+      }
+    }
+
+    let repaired = cleaned;
+    if (inString) {
+      repaired += '"';
+    }
+
+    // Iteratively clean trailing invalid syntax before closing braces
+    let cleanRep = repaired.trim();
+    let changed = true;
+    while (changed) {
+      changed = false;
+      if (/:$/.test(cleanRep)) {
+        cleanRep = cleanRep.slice(0, -1).trim();
+        changed = true;
+      }
+      if (/,$/.test(cleanRep)) {
+        cleanRep = cleanRep.slice(0, -1).trim();
+        changed = true;
+      }
+    }
+
+    // Append matching closing structures
+    for (let i = stack.length - 1; i >= 0; i--) {
+      const open = stack[i];
+      if (open === '{') {
+        cleanRep += '}';
+      } else if (open === '[') {
+        cleanRep += ']';
+      }
+    }
+
+    return cleanRep;
+  }
+
+  private repairAndParseJson(jsonString: string): any {
+    let cleaned = jsonString.trim();
+    const firstBrace = cleaned.indexOf('{');
+    if (firstBrace !== -1) {
+      cleaned = cleaned.substring(firstBrace).trim();
+    }
+
+    // 1. Try to repair the entire string and parse it
+    try {
+      const repaired = this.repairJson(cleaned);
+      const sanitized = repaired.replace(/,\s*([}\]])/g, '$1');
+      return JSON.parse(sanitized);
+    } catch {
+      // Repair failed or JSON.parse failed. Let's backtrack using safe delimiters!
+    }
+
+    // Identify safe delimiter indices (indices of delimiters outside string literals)
+    const safeDelimiterIndices: number[] = [];
+    let inString = false;
+    let escaped = false;
+    const stack: ('{' | '[')[] = [];
+
+    for (let i = 0; i < cleaned.length; i++) {
+      const char = cleaned[i];
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+        } else if (char === '\\') {
+          escaped = true;
+        } else if (char === '"') {
+          inString = false;
+        }
+      } else {
+        if (char === '"') {
+          inString = true;
+        } else if (char === '{') {
+          stack.push('{');
+          safeDelimiterIndices.push(i);
+        } else if (char === '[') {
+          stack.push('[');
+          safeDelimiterIndices.push(i);
+        } else if (char === '}') {
+          if (stack.length > 0 && stack[stack.length - 1] === '{') {
+            stack.pop();
+          }
+          safeDelimiterIndices.push(i);
+        } else if (char === ']') {
+          if (stack.length > 0 && stack[stack.length - 1] === '[') {
+            stack.pop();
+          }
+          safeDelimiterIndices.push(i);
+        } else if (char === ',') {
+          safeDelimiterIndices.push(i);
+        }
+      }
+    }
+
+    // Backtrack backwards through safe delimiters and attempt sliced repairs
+    for (let k = safeDelimiterIndices.length - 1; k >= 0; k--) {
+      const delimiterIndex = safeDelimiterIndices[k];
+      const sliced = cleaned.substring(0, delimiterIndex).trim();
+      if (!sliced) continue;
+
+      try {
+        const repaired = this.repairJson(sliced);
+        const sanitized = repaired.replace(/,\s*([}\]])/g, '$1');
+        return JSON.parse(sanitized);
+      } catch {
+        // Keep backtracking
+      }
+    }
+
+    throw new Error('Could not repair and parse truncated JSON');
   }
 }
 

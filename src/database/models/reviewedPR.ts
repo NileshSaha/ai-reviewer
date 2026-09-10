@@ -6,6 +6,7 @@ interface ReviewedPRAttributes {
   prNumber: number;
   headSha: string;
   reviewedAt: Date;
+  provider?: string | null;
 }
 
 interface ReviewedPRCreationAttributes extends Optional<ReviewedPRAttributes, 'id'> {}
@@ -17,6 +18,7 @@ class ReviewedPRModel extends Model<ReviewedPRAttributes, ReviewedPRCreationAttr
   declare prNumber: number;
   declare headSha: string;
   declare reviewedAt: Date;
+  declare provider: string | null;
 }
 
 export function initReviewedPRModel(sequelize: Sequelize): typeof ReviewedPRModel {
@@ -42,6 +44,10 @@ export function initReviewedPRModel(sequelize: Sequelize): typeof ReviewedPRMode
       reviewedAt: {
         type: DataTypes.DATE,
         allowNull: false,
+      },
+      provider: {
+        type: DataTypes.STRING(100),
+        allowNull: true,
       },
     },
     {

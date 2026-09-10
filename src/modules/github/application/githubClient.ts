@@ -17,6 +17,13 @@ export interface GitHubClient {
 
   getPullRequestFiles(owner: string, repo: string, prNumber: number): Promise<GitHubFile[]>;
 
+  compareCommits(
+    owner: string,
+    repo: string,
+    base: string,
+    head: string
+  ): Promise<GitHubFile[]>;
+
   getPullRequestDiff(owner: string, repo: string, prNumber: number): Promise<string>;
 
   createReview(owner: string, repo: string, prNumber: number, review: GitHubReviewInput): Promise<GitHubReview>;

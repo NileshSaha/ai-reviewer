@@ -212,4 +212,35 @@ describe('parseAIReviewResponse', () => {
     const result = parser.parseTestResponse(input);
     expect(result.overallComment).toBe('');
   });
+
+  it('successfully parses and repairs truncated JSON responses', () => {
+    const input = `{
+      "verdict": "REQUEST_CHANGES",
+      "score": 58,
+      "summary": "This is truncated",
+      "strengths": [
+        "strength one"
+      ],
+      "issues": [
+        {
+          "severity": "critical",
+          "file": "src/a.ts",
+          "line": 60,
+          "description": "Critical bug",
+          "suggestion": "Fix it"
+        },
+        {
+          "severity": "minor",
+          "`;
+    
+    const result = parser.parseTestResponse(input);
+    expect(result.verdict).toBe('REQUEST_CHANGES');
+    expect(result.score).toBe(58);
+    expect(result.summary).toBe('This is truncated');
+    expect(result.strengths).toEqual(['strength one']);
+    expect(result.issues).toHaveLength(1);
+    expect(result.issues[0].severity).toBe('critical');
+    expect(result.issues[0].file).toBe('src/a.ts');
+    expect(result.issues[0].description).toBe('Critical bug');
+  });
 });

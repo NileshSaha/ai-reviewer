@@ -89,6 +89,11 @@ export function loadConfig(): AppConfig {
     throw new ValidationError('MAX_PATCH_CHARS_PER_FILE must be between 200 and 20000');
   }
 
+  const skipReviewBelowScore = getEnvInt('SKIP_REVIEW_BELOW_SCORE', 70);
+  if (skipReviewBelowScore < 0 || skipReviewBelowScore > 100) {
+    throw new ValidationError('SKIP_REVIEW_BELOW_SCORE must be between 0 and 100');
+  }
+
   const repositories = parseRepositories();
 
   const database: DatabaseConfig = {
@@ -127,6 +132,7 @@ export function loadConfig(): AppConfig {
     openaiModel: getEnvOptional('OPENAI_MODEL', 'gpt-4o-mini'),
     openaiEndpoint: getEnvOptional('OPENAI_API_ENDPOINT', 'https://api.openai.com/v1/chat/completions'),
     approvalThreshold: getEnvInt('APPROVAL_THRESHOLD', 80),
+    skipReviewBelowScore,
     maxPromptTokens,
     maxResponseTokens,
     maxPatchCharsPerFile,

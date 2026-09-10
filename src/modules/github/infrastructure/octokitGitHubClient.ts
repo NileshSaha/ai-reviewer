@@ -179,6 +179,32 @@ export class OctokitGitHubClient implements GitHubClient {
     return files;
   }
 
+  async compareCommits(
+    owner: string,
+    repo: string,
+    base: string,
+    head: string
+  ): Promise<GitHubFile[]> {
+    const response = await this.requestWithRetry(() =>
+      this.client.repos.compareCommits({
+        owner,
+        repo,
+        base,
+        head,
+      })
+    );
+
+    const files = response.data.files ?? [];
+    return files.map((f) => ({
+      filename: f.filename,
+      status: f.status as GitHubFile['status'],
+      additions: f.additions,
+      deletions: f.deletions,
+      patch: f.patch ?? undefined,
+      contentsUrl: f.contents_url,
+    }));
+  }
+
   async getPullRequestDiff(owner: string, repo: string, prNumber: number): Promise<string> {
     const response = await this.requestWithRetry(() =>
       this.client.pulls.get({

@@ -17,6 +17,7 @@ export interface ReviewPipelineDeps {
   reviewRepository: ReviewRepository;
   eventBus: EventBus;
   approvalThreshold: number;
+  skipReviewBelowScore?: number;
   logger?: Logger;
   clock?: Clock;
 }
@@ -28,6 +29,7 @@ export function createReviewPipeline(deps: ReviewPipelineDeps) {
     reviewRepository,
     eventBus,
     approvalThreshold,
+    skipReviewBelowScore = 70,
   } = deps;
 
   const logger = deps.logger ?? createDefaultLogger();
@@ -45,7 +47,58 @@ export function createReviewPipeline(deps: ReviewPipelineDeps) {
       const [owner, repo] = repository.split('/');
 
       const prDetails = await githubClient.getPullRequest(owner, repo, prNumber);
-      const files = await githubClient.getPullRequestFiles(owner, repo, prNumber);
+      const prFiles = await githubClient.getPullRequestFiles(owner, repo, prNumber);
+
+      let files: any[] = prFiles;
+      let lastReviewedSha: string | undefined;
+
+      const previousReview = await reviewRepository.findByRepoAndPR(repository, prNumber);
+      if (previousReview && previousReview.headSha !== event.payload.headSha) {
+        try {
+          log.info(`Fetching incremental changes between ${previousReview.headSha} and ${event.payload.headSha}`);
+          const incFiles = await githubClient.compareCommits(owner, repo, previousReview.headSha, event.payload.headSha);
+
+          // Intersect to filter out base branch merge commits
+          const prFileNames = new Set(prFiles.map((f) => f.filename));
+          files = incFiles.filter((f) => prFileNames.has(f.filename));
+          lastReviewedSha = previousReview.headSha;
+
+          log.debug(`Incremental files count: ${incFiles.length}. Intersected with PR files count: ${files.length}`);
+        } catch (compareErr: any) {
+          log.warn(`Failed to compare commits ${previousReview.headSha}...${event.payload.headSha}, falling back to full PR review`, {
+            error: compareErr?.message ?? String(compareErr),
+          });
+          files = prFiles;
+        }
+      }
+
+      // If no files left after intersection, it means the changes were purely merge-sync commits from the base branch
+      if (files.length === 0) {
+        log.info(`No new unique PR changes detected (only base branch merges/syncs). Skipping review.`);
+        await reviewRepository.create({
+          repository,
+          prNumber,
+          headSha: event.payload.headSha,
+          reviewedAt: clock.now(),
+          provider: 'skipped',
+        });
+
+        // Publish skipped event as completed
+        const completedEvent: ReviewCompletedEvent = {
+          type: EVENT_TYPES.REVIEW_COMPLETED,
+          payload: {
+            correlationId,
+            repository,
+            prNumber,
+            decision: 'APPROVE',
+            score: 100,
+            commentsCount: 0,
+            completedAt: clock.nowISO(),
+          },
+        };
+        await eventBus.publish(completedEvent);
+        return;
+      }
 
       log.debug(`Fetched PR details and ${files.length} files`);
 
@@ -71,6 +124,7 @@ export function createReviewPipeline(deps: ReviewPipelineDeps) {
         author: prDetails.author.login,
         baseBranch: prDetails.baseBranch,
         headBranch: prDetails.headBranch,
+        lastReviewedSha,
       };
 
       const aiResult = await aiProvider.generateReview(prForAI, diffContent);
@@ -88,9 +142,27 @@ export function createReviewPipeline(deps: ReviewPipelineDeps) {
 
       const decision = scorer.decide(aiResult.score, aiResult.summary, aiResult.verdict);
 
-      const reviewBody = buildReviewBody(decision, aiResult, aiProvider.name());
-      const validDiffLinesMap = buildValidDiffLinesMap(filteredFiles);
-      const inlineComments = buildInlineComments(decision, aiResult.issues, validDiffLinesMap);
+      const githubEvent = mapDecisionToGitHubEvent(decision, aiResult);
+      const hideScore = aiResult.score < skipReviewBelowScore;
+      const reviewBody = buildReviewBody(decision, aiResult, aiProvider.name(), githubEvent, hideScore);
+
+      // Calculate intersection of valid diff lines:
+      const incrementalValidLinesMap = buildValidDiffLinesMap(filteredFiles);
+      const prValidLinesMap = buildValidDiffLinesMap(fileFilter.filterFiles(prFiles));
+
+      // Build valid inline lines map by intersecting them:
+      const intersectedValidLinesMap = new Map<string, Set<number>>();
+      for (const [filename, lines] of incrementalValidLinesMap.entries()) {
+        const prLines = prValidLinesMap.get(filename);
+        if (prLines) {
+          const intersection = new Set([...lines].filter((x) => prLines.has(x)));
+          if (intersection.size > 0) {
+            intersectedValidLinesMap.set(filename, intersection);
+          }
+        }
+      }
+
+      const inlineComments = buildInlineComments(decision, aiResult.issues, intersectedValidLinesMap);
 
       if (decision.decision === 'REQUEST_CHANGES' && aiResult.issues.length > 0) {
         log.debug('Validated inline comments against diff hunks', {
@@ -101,7 +173,7 @@ export function createReviewPipeline(deps: ReviewPipelineDeps) {
 
       const reviewInput: GitHubReviewInput = {
         body: reviewBody,
-        event: decision.decision,
+        event: githubEvent,
         comments: inlineComments.length > 0 ? inlineComments : undefined,
       };
 
@@ -130,7 +202,9 @@ export function createReviewPipeline(deps: ReviewPipelineDeps) {
 
       log.info(`GitHub review posted`, {
         decision: decision.decision,
+        githubEvent,
         score: aiResult.score,
+        hideScore,
         inline_comment_count: reviewInput.comments?.length ?? 0,
         reason_truncated: decision.reason.substring(0, 100),
       });
@@ -140,6 +214,7 @@ export function createReviewPipeline(deps: ReviewPipelineDeps) {
         prNumber,
         headSha: event.payload.headSha,
         reviewedAt: clock.now(),
+        provider: aiProvider.name(),
       });
       log.debug('Review state persisted');
 
@@ -211,11 +286,15 @@ function createDefaultClock(): ClockType {
 
 export function buildReviewBody(
   decision: ScoringResult,
-  aiResult: { summary: string; strengths: string[]; issues: ReviewIssue[]; security: string | null; performance: string | null; overallComment: string },
-  providerName: string
+  aiResult: { score?: number; summary: string; strengths: string[]; issues: ReviewIssue[]; security: string | null; performance: string | null; overallComment: string },
+  providerName: string,
+  githubEvent: 'APPROVE' | 'COMMENT' | 'REQUEST_CHANGES' = decision.decision as 'APPROVE' | 'REQUEST_CHANGES',
+  hideScore: boolean = false
 ): string {
-  const emoji = decision.decision === 'APPROVE' ? '✅' : '❌';
-  const header = `## AI Based Code Review ${emoji}\n**Score:** ${decision.score}/100 | **Decision:** ${decision.decision}\n`;
+  const emoji = githubEvent === 'APPROVE' ? '✅' : githubEvent === 'REQUEST_CHANGES' ? '❌' : '💡';
+  const statusLabel = deriveStatusLabel(githubEvent);
+  const scoreLine = hideScore ? '' : `**Score:** ${decision.score}/100 | `;
+  const header = `## AI Based Code Review ${emoji}\n${scoreLine}**Status:** ${statusLabel}\n`;
 
   let customComment = (aiResult.overallComment || '').trim();
   if (customComment) {
@@ -270,13 +349,34 @@ export function buildReviewBody(
   }
 
   lines.push('### 📝 Verdict', '');
-  if (decision.decision === 'APPROVE') {
+  if (githubEvent === 'APPROVE') {
     lines.push('This PR looks good to merge.');
-  } else {
+  } else if (githubEvent === 'REQUEST_CHANGES') {
     lines.push('Please address the issues above before merging.');
+  } else {
+    lines.push('Suggestions are provided above for consideration.');
   }
 
   return lines.join('\n');
+}
+
+export function mapDecisionToGitHubEvent(
+  decision: ScoringResult,
+  aiResult: { issues: ReviewIssue[]; security: string | null }
+): 'APPROVE' | 'COMMENT' | 'REQUEST_CHANGES' {
+  if (decision.decision === 'APPROVE') {
+    return 'APPROVE';
+  }
+
+  const hasCritical = aiResult.issues.some((issue) => issue.severity === 'critical') || aiResult.security !== null;
+
+  return hasCritical ? 'REQUEST_CHANGES' : 'COMMENT';
+}
+
+export function deriveStatusLabel(githubEvent: 'APPROVE' | 'COMMENT' | 'REQUEST_CHANGES'): 'Approved' | 'Suggestions' | 'Changes Requested' {
+  if (githubEvent === 'APPROVE') return 'Approved';
+  if (githubEvent === 'REQUEST_CHANGES') return 'Changes Requested';
+  return 'Suggestions';
 }
 
 export function buildInlineComments(
