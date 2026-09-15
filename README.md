@@ -54,8 +54,7 @@ All configuration via environment variables in `.env`:
 | `GITHUB_PAT` | Yes | - | GitHub Personal Access Token |
 | `GITHUB_USERNAME` | Yes | - | GitHub username to monitor |
 | `LLM_PROVIDER` | No | `minimax` | Primary provider (`minimax`, `gemini`, `openrouter`, `groq`, or `openai`) |
-| `MINIMAX_API_KEY` | For Minimax (User 1) | - | MiniMax Account 1 API key (Token Plan `sk-cp...` or standard key) |
-| `MINIMAX_API_KEY_2` | Optional (User 2) | - | MiniMax Account 2 API key (Fallback 1) |
+| `MINIMAX_API_KEY` | For Minimax | - | MiniMax API key (Token Plan `sk-cp...` or standard key) |
 | `MINIMAX_MODEL` | No | `MiniMax-M3` | MiniMax model (`MiniMax-M3`, `MiniMax-Text-01`, `MiniMax-M2.7`) |
 | `MINIMAX_API_ENDPOINT` | No | `https://api.minimax.io/v1/chat/completions` | MiniMax API endpoint |
 | `GEMINI_API_KEY` | For Gemini | - | Google Gemini API key (Fallback 2) |

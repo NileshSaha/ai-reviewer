@@ -3,13 +3,16 @@ import { loadConfig } from './config';
 import { createSequelize } from './database/sequelize';
 import { initReviewedPRModel, ReviewedPRModel } from './database/models/reviewedPR';
 import { initRepositoryModel, RepositoryModel } from './database/models/repository';
+import { initProviderPriorityModel, ProviderPriorityModel } from './database/models/providerPriority';
 import { SequelizeRepositoryRepository } from './modules/repository/infrastructure/sequelizeRepositoryRepository';
 import { createLogger } from './shared/utils/logger';
 import { SystemClock } from './shared/utils/clock';
 import { UUIDAdapter } from './shared/utils/uuid';
 import { InMemoryEventBus } from './modules/events/infrastructure/inMemoryEventBus';
 import { OctokitGitHubClient } from './modules/github/infrastructure/octokitGitHubClient';
-import { createAIProvider } from './modules/ai/infrastructure/aiFactory';
+import { createAIProvider, DEFAULT_PRIORITY_ORDER } from './modules/ai/infrastructure/aiFactory';
+import { SequelizeProviderPriorityRepository } from './modules/ai/infrastructure/sequelizeProviderPriorityRepository';
+import { DynamicAIProvider } from './modules/ai/infrastructure/dynamicAIProvider';
 import { SequelizeReviewRepository } from './modules/review/infrastructure/sequelizeReviewRepository';
 import { createReviewPipeline } from './modules/review/application/reviewPipeline';
 import { createScheduler } from './modules/scheduler/application/schedulerService';
@@ -53,6 +56,7 @@ async function main(): Promise<void> {
 
   initReviewedPRModel(sequelize);
   initRepositoryModel(sequelize);
+  initProviderPriorityModel(sequelize);
 
   // Safe schema migration for the new provider column
   await sequelize.query('ALTER TABLE reviewed_prs ADD COLUMN IF NOT EXISTS provider VARCHAR(100)').catch((err) => {
@@ -62,8 +66,13 @@ async function main(): Promise<void> {
   await Promise.all([
     ReviewedPRModel.sync(),
     RepositoryModel.sync(),
+    ProviderPriorityModel.sync(),
   ]);
   logger.info('Database tables ensured');
+
+  const providerPriorityRepo = new SequelizeProviderPriorityRepository(logger);
+  await providerPriorityRepo.seedDefaultsIfEmpty(DEFAULT_PRIORITY_ORDER);
+  const initialPriorityOrder = await providerPriorityRepo.getPriorityOrder();
 
   const githubClient = new OctokitGitHubClient(config.github.pat, logger, clock);
   const repositoryRepository = new SequelizeRepositoryRepository(logger);
@@ -74,7 +83,7 @@ async function main(): Promise<void> {
     await repositoryRepository.syncFromGitHub(githubRepos);
     logger.info(`Synced ${githubRepos.length} repositories from GitHub`);
   }
-  const aiProvider = createAIProvider(config.ai, logger);
+  const aiProvider = new DynamicAIProvider(config.ai, logger, providerPriorityRepo, initialPriorityOrder);
   const reviewRepository = new SequelizeReviewRepository(logger);
 
   const reviewPipeline = createReviewPipeline({
@@ -152,6 +161,47 @@ async function main(): Promise<void> {
         description: 'Interactive API console for triggering manual PR reviews and checking service health.',
       },
       paths: {
+        '/provider-priority': {
+          get: {
+            summary: 'Get current AI provider priority fallback order',
+            responses: {
+              200: {
+                description: 'Current AI provider priority order',
+              },
+            },
+          },
+          post: {
+            summary: 'Update AI provider priority fallback order',
+            description: 'Manually update the priority sequence of AI providers used for fallback reviews.',
+            requestBody: {
+              required: true,
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      providers: {
+                        type: 'array',
+                        items: { type: 'string' },
+                        example: ['minimax', 'gemini', 'openrouter', 'groq', 'openai'],
+                        description: 'Ordered array of provider names or candidate IDs',
+                      },
+                    },
+                    required: ['providers'],
+                  },
+                },
+              },
+            },
+            responses: {
+              200: {
+                description: 'Priority updated successfully',
+              },
+              400: {
+                description: 'Invalid input array',
+              },
+            },
+          },
+        },
         '/review': {
           post: {
             summary: 'Manually trigger a pull request review',
@@ -313,6 +363,40 @@ async function main(): Promise<void> {
         message: `Review triggered successfully for ${repository}#${prNumber}`,
         correlationId,
         headSha: prDetails.headSha,
+      });
+    } catch (err: any) {
+      next(err);
+    }
+  });
+
+  app.get('/provider-priority', async (_req, res, next) => {
+    try {
+      const priorityOrder = await aiProvider.getPriorityOrder();
+      res.json({
+        priorityOrder,
+        activeChain: aiProvider.name(),
+      });
+    } catch (err: any) {
+      next(err);
+    }
+  });
+
+  app.post('/provider-priority', async (req, res, next) => {
+    try {
+      const { providers, priority } = req.body || {};
+      const newOrder = providers || priority;
+      if (!Array.isArray(newOrder) || newOrder.length === 0) {
+        res.status(400).json({
+          error: 'Invalid input: body must contain a non-empty array under "providers" or "priority" key',
+        });
+        return;
+      }
+
+      const updatedOrder = await aiProvider.updatePriorityOrder(newOrder);
+      res.json({
+        message: 'AI Provider priority order updated successfully',
+        priorityOrder: updatedOrder,
+        activeChain: aiProvider.name(),
       });
     } catch (err: any) {
       next(err);

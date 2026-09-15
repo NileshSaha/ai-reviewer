@@ -25,6 +25,7 @@ export interface AIReviewResult {
   performance: string | null;
   comments: AIReviewComment[];
   overallComment: string;
+  provider?: string;
 }
 
 export interface PRDetails {

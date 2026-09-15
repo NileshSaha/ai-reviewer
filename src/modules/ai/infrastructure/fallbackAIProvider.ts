@@ -89,7 +89,10 @@ export class FallbackAIProvider implements AIProvider {
             provider: entry.name,
           });
         }
-        return result;
+        return {
+          ...result,
+          provider: entry.name,
+        };
       } catch (err: any) {
         const errorMsg = err instanceof Error ? err.message : String(err);
         errors.push({ provider: entry.name, error: errorMsg });

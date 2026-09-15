@@ -116,7 +116,6 @@ export function loadConfig(): AppConfig {
   const ai: AIConfig = {
     provider: llmProvider,
     minimaxApiKey: process.env['MINIMAX_API_KEY'] ?? '',
-    minimaxApiKey2: process.env['MINIMAX_API_KEY_2'] || undefined,
     minimaxModel: getEnvOptional('MINIMAX_MODEL', 'MiniMax-M3'),
     minimaxEndpoint: getEnvOptional('MINIMAX_API_ENDPOINT', 'https://api.minimax.io/v1/chat/completions'),
     geminiApiKey: process.env['GEMINI_API_KEY'] || undefined,

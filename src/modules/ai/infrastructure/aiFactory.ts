@@ -20,9 +20,8 @@ interface CandidateSpec {
   create: (key: string) => AIProvider;
 }
 
-const DEFAULT_PRIORITY_ORDER = [
-  'minimax-1',
-  'minimax-2',
+export const DEFAULT_PRIORITY_ORDER = [
+  'minimax',
   'gemini',
   'openrouter',
   'groq',
@@ -38,23 +37,28 @@ function buildProviderOptions(config: AIConfig): BaseAIProviderOptions {
   };
 }
 
-export function createAIProvider(config: AIConfig, logger: Logger): AIProvider {
+function candidateMatchesItem(item: string, candidate: CandidateSpec): boolean {
+  const normalizedItem = item.trim().toLowerCase();
+  return (
+    candidate.id.toLowerCase() === normalizedItem ||
+    candidate.displayName.toLowerCase() === normalizedItem ||
+    candidate.providerType.toLowerCase() === normalizedItem
+  );
+}
+
+export function createAIProvider(
+  config: AIConfig,
+  logger: Logger,
+  customPriorityOrder?: string[]
+): AIProvider {
   const providerOpts = buildProviderOptions(config);
 
   const candidates: CandidateSpec[] = [
     {
-      id: 'minimax-1',
+      id: 'minimax',
       providerType: 'minimax',
-      displayName: 'minimax-user1',
+      displayName: 'minimax',
       apiKey: config.minimaxApiKey || undefined,
-      create: (key) =>
-        new MinimaxAIProvider(key, logger, config.minimaxModel, config.minimaxEndpoint, providerOpts),
-    },
-    {
-      id: 'minimax-2',
-      providerType: 'minimax',
-      displayName: 'minimax-user2',
-      apiKey: config.minimaxApiKey2 || undefined,
       create: (key) =>
         new MinimaxAIProvider(key, logger, config.minimaxModel, config.minimaxEndpoint, providerOpts),
     },
@@ -92,32 +96,53 @@ export function createAIProvider(config: AIConfig, logger: Logger): AIProvider {
     },
   ];
 
-  // Determine priority order: promote configured LLM_PROVIDER to top if set
-  const configuredType = config.provider;
   const prioritizedCandidates: CandidateSpec[] = [];
 
-  // 1. First add candidate(s) matching the configured provider
-  for (const candidate of candidates) {
-    if (candidate.providerType === configuredType && candidate.apiKey) {
-      prioritizedCandidates.push(candidate);
+  if (customPriorityOrder && customPriorityOrder.length > 0) {
+    // 1. Prioritize candidates in order specified by customPriorityOrder
+    for (const item of customPriorityOrder) {
+      const match = candidates.find(
+        (c) => candidateMatchesItem(item, c) && c.apiKey && !prioritizedCandidates.some((p) => p.id === c.id)
+      );
+      if (match) {
+        prioritizedCandidates.push(match);
+      }
     }
-  }
 
-  // 2. Then add the remaining candidates in DEFAULT_PRIORITY_ORDER
-  for (const id of DEFAULT_PRIORITY_ORDER) {
-    const candidate = candidates.find((c) => c.id === id);
-    if (
-      candidate &&
-      candidate.apiKey &&
-      !prioritizedCandidates.some((p) => p.id === candidate.id)
-    ) {
-      prioritizedCandidates.push(candidate);
+    // 2. Append any remaining available candidates that were not listed
+    for (const item of DEFAULT_PRIORITY_ORDER) {
+      const match = candidates.find(
+        (c) => candidateMatchesItem(item, c) && c.apiKey && !prioritizedCandidates.some((p) => p.id === c.id)
+      );
+      if (match) {
+        prioritizedCandidates.push(match);
+      }
+    }
+  } else {
+    // Default strategy: promote configured LLM_PROVIDER to top if set
+    const configuredType = config.provider;
+
+    // 1. First add candidate(s) matching the configured provider
+    for (const candidate of candidates) {
+      if (candidate.providerType === configuredType && candidate.apiKey) {
+        prioritizedCandidates.push(candidate);
+      }
+    }
+
+    // 2. Then add the remaining candidates in DEFAULT_PRIORITY_ORDER
+    for (const item of DEFAULT_PRIORITY_ORDER) {
+      const candidate = candidates.find(
+        (c) => candidateMatchesItem(item, c) && c.apiKey && !prioritizedCandidates.some((p) => p.id === c.id)
+      );
+      if (candidate) {
+        prioritizedCandidates.push(candidate);
+      }
     }
   }
 
   if (prioritizedCandidates.length === 0) {
     throw new ValidationError(
-      'No AI provider API key configured. Set at least one of: MINIMAX_API_KEY, MINIMAX_API_KEY_2, GEMINI_API_KEY, OPENROUTER_API_KEY, GROQ_API_KEY, OPENAI_API_KEY'
+      'No AI provider API key configured. Set at least one of: MINIMAX_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY, GROQ_API_KEY, OPENAI_API_KEY'
     );
   }
 

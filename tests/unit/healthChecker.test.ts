@@ -312,15 +312,15 @@ describe('createHealthChecker', () => {
     const logger = createMockLogger();
     const github = createMockGitHub(async () => ({ valid: true }));
 
-    const p1 = createMockAI(async () => ({ valid: false, error: 'Auth failed (401)' }), 'minimax-user1');
+    const p1 = createMockAI(async () => ({ valid: false, error: 'Auth failed (401)' }), 'minimax');
     const p2 = createMockAI(async () => ({ valid: true }), 'groq');
 
     const fallbackProvider: any = {
-      name: () => 'minimax-user1 (fallback: groq)',
+      name: () => 'minimax (fallback: groq)',
       validateApiKey: jest.fn().mockResolvedValue({ valid: true }),
       generateReview: jest.fn(),
       getEntries: () => [
-        { name: 'minimax-user1', provider: p1.provider },
+        { name: 'minimax', provider: p1.provider },
         { name: 'groq', provider: p2.provider },
       ],
     };
@@ -339,7 +339,7 @@ describe('createHealthChecker', () => {
     expect(report.checks.ai.providers).toBeDefined();
     expect(report.checks.ai.providers).toHaveLength(2);
     expect(report.checks.ai.providers![0]).toMatchObject({
-      name: 'minimax-user1',
+      name: 'minimax',
       status: 'unhealthy',
       error: 'Auth failed (401)',
     });

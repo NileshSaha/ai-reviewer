@@ -166,7 +166,11 @@ export abstract class BaseAIProvider {
         }
 
         const data = await response.json();
-        return this.parseResponse(data);
+        const parsed = this.parseResponse(data);
+        return {
+          ...parsed,
+          provider: parsed.provider || this.nameValue,
+        };
       } catch (error) {
         if (error instanceof AIProviderError) {
           throw error;

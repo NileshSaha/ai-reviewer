@@ -44,43 +44,43 @@ const mockReviewSuccess: AIReviewResult = {
 describe('FallbackAIProvider', () => {
   it('initializes and formats chain name properly', () => {
     const p1: AIProvider = {
-      name: () => 'minimax-user1',
+      name: () => 'minimax',
       validateApiKey: jest.fn().mockResolvedValue({ valid: true }),
       generateReview: jest.fn().mockResolvedValue(mockReviewSuccess),
     };
     const p2: AIProvider = {
-      name: () => 'minimax-user2',
+      name: () => 'groq',
       validateApiKey: jest.fn().mockResolvedValue({ valid: true }),
       generateReview: jest.fn().mockResolvedValue(mockReviewSuccess),
     };
 
     const fallback = new FallbackAIProvider(
       [
-        { name: 'minimax-user1', provider: p1 },
-        { name: 'minimax-user2', provider: p2 },
+        { name: 'minimax', provider: p1 },
+        { name: 'groq', provider: p2 },
       ],
       createMockLogger()
     );
 
-    expect(fallback.name()).toBe('minimax-user1 (fallback: minimax-user2)');
+    expect(fallback.name()).toBe('minimax (fallback: groq)');
   });
 
   it('uses primary provider when primary succeeds', async () => {
     const p1: AIProvider = {
-      name: () => 'minimax-user1',
+      name: () => 'minimax',
       validateApiKey: jest.fn().mockResolvedValue({ valid: true }),
       generateReview: jest.fn().mockResolvedValue(mockReviewSuccess),
     };
     const p2: AIProvider = {
-      name: () => 'minimax-user2',
+      name: () => 'groq',
       validateApiKey: jest.fn().mockResolvedValue({ valid: true }),
       generateReview: jest.fn().mockResolvedValue(mockReviewSuccess),
     };
 
     const fallback = new FallbackAIProvider(
       [
-        { name: 'minimax-user1', provider: p1 },
-        { name: 'minimax-user2', provider: p2 },
+        { name: 'minimax', provider: p1 },
+        { name: 'groq', provider: p2 },
       ],
       createMockLogger()
     );
@@ -94,21 +94,21 @@ describe('FallbackAIProvider', () => {
 
   it('fails over to secondary provider when primary throws 429 / error', async () => {
     const p1: AIProvider = {
-      name: () => 'minimax-user1',
+      name: () => 'minimax',
       validateApiKey: jest.fn().mockResolvedValue({ valid: false, error: 'Rate limit 429' }),
-      generateReview: jest.fn().mockRejectedValue(new AIProviderError('Rate limited 429', 'minimax-user1', true)),
+      generateReview: jest.fn().mockRejectedValue(new AIProviderError('Rate limited 429', 'minimax', true)),
     };
     const p2Review: AIReviewResult = { ...mockReviewSuccess, score: 85 };
     const p2: AIProvider = {
-      name: () => 'minimax-user2',
+      name: () => 'groq',
       validateApiKey: jest.fn().mockResolvedValue({ valid: true }),
       generateReview: jest.fn().mockResolvedValue(p2Review),
     };
 
     const fallback = new FallbackAIProvider(
       [
-        { name: 'minimax-user1', provider: p1 },
-        { name: 'minimax-user2', provider: p2 },
+        { name: 'minimax', provider: p1 },
+        { name: 'groq', provider: p2 },
       ],
       createMockLogger()
     );
@@ -122,20 +122,20 @@ describe('FallbackAIProvider', () => {
 
   it('throws AIProviderError when all providers in the chain fail', async () => {
     const p1: AIProvider = {
-      name: () => 'minimax-user1',
+      name: () => 'minimax',
       validateApiKey: jest.fn().mockResolvedValue({ valid: false }),
       generateReview: jest.fn().mockRejectedValue(new Error('P1 quota exceeded')),
     };
     const p2: AIProvider = {
-      name: () => 'minimax-user2',
+      name: () => 'groq',
       validateApiKey: jest.fn().mockResolvedValue({ valid: false }),
       generateReview: jest.fn().mockRejectedValue(new Error('P2 quota exceeded')),
     };
 
     const fallback = new FallbackAIProvider(
       [
-        { name: 'minimax-user1', provider: p1 },
-        { name: 'minimax-user2', provider: p2 },
+        { name: 'minimax', provider: p1 },
+        { name: 'groq', provider: p2 },
       ],
       createMockLogger()
     );

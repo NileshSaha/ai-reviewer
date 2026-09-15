@@ -128,7 +128,9 @@ export function createReviewPipeline(deps: ReviewPipelineDeps) {
       };
 
       const aiResult = await aiProvider.generateReview(prForAI, diffContent);
+      const effectiveProvider = aiResult.provider || aiProvider.name();
       log.info(`AI review generated`, {
+        provider: effectiveProvider,
         score: aiResult.score,
         verdict: aiResult.verdict,
         strengths_count: aiResult.strengths.length,
@@ -144,7 +146,7 @@ export function createReviewPipeline(deps: ReviewPipelineDeps) {
 
       const githubEvent = mapDecisionToGitHubEvent(decision, aiResult);
       const hideScore = aiResult.score < skipReviewBelowScore;
-      const reviewBody = buildReviewBody(decision, aiResult, aiProvider.name(), githubEvent, hideScore);
+      const reviewBody = buildReviewBody(decision, aiResult, effectiveProvider, githubEvent, hideScore);
 
       // Calculate intersection of valid diff lines:
       const incrementalValidLinesMap = buildValidDiffLinesMap(filteredFiles);
@@ -214,7 +216,7 @@ export function createReviewPipeline(deps: ReviewPipelineDeps) {
         prNumber,
         headSha: event.payload.headSha,
         reviewedAt: clock.now(),
-        provider: aiProvider.name(),
+        provider: effectiveProvider,
       });
       log.debug('Review state persisted');
 

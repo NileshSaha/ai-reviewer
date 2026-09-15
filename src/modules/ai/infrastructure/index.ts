@@ -6,3 +6,6 @@ export * from './groqAIProvider';
 export * from './openAIProvider';
 export * from './fallbackAIProvider';
 export * from './aiFactory';
+export * from './sequelizeProviderPriorityRepository';
+export * from './dynamicAIProvider';
+

@@ -23,7 +23,6 @@ export interface RepositoryConfig {
 export interface AIConfig {
   provider: 'minimax' | 'gemini' | 'openrouter' | 'groq' | 'openai';
   minimaxApiKey: string;
-  minimaxApiKey2?: string;
   minimaxModel: string;
   minimaxEndpoint?: string;
   geminiApiKey?: string;
