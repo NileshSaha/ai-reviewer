@@ -8,7 +8,7 @@ export interface TokenBudget {
 
 export const DEFAULT_TOKEN_BUDGET: TokenBudget = {
   maxPromptTokens: 4500,
-  maxResponseTokens: 1000,
+  maxResponseTokens: 4096,
   charsPerToken: 4,
 };
 

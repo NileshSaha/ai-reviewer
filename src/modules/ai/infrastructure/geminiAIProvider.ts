@@ -24,14 +24,14 @@ export class GeminiAIProvider extends BaseAIProvider {
       messages: [
         {
           role: 'system',
-          content: 'You are an expert code reviewer. You MUST respond with valid JSON only.',
+          content: 'You are an expert code reviewer. You MUST respond with complete, valid JSON matching the requested structure. Keep summaries concise so all issues and suggestions fit within output limits.',
         },
         {
           role: 'user',
           content: prompt,
         },
       ],
-      temperature: 0.3,
+      temperature: 0.2,
       response_format: { type: 'json_object' },
       max_tokens: maxResponseTokens ?? this.maxResponseTokens,
     };

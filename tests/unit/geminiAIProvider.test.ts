@@ -34,7 +34,7 @@ describe('GeminiAIProvider', () => {
 
     expect(body.model).toBe('gemini-2.5-flash');
     expect(body.max_tokens).toBe(500);
-    expect(body.temperature).toBe(0.3);
+    expect(body.temperature).toBe(0.2);
     expect(body.response_format).toEqual({ type: 'json_object' });
     expect(body.messages).toHaveLength(2);
     expect(body.messages[0].role).toBe('system');

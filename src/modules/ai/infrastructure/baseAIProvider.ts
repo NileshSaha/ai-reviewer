@@ -142,7 +142,7 @@ export abstract class BaseAIProvider {
             currentBudget = {
               ...currentBudget,
               maxPromptTokens: Math.max(500, Math.floor(currentBudget.maxPromptTokens * shrinkFactor)),
-              maxResponseTokens: Math.max(200, Math.floor(currentBudget.maxResponseTokens * shrinkFactor)),
+              maxResponseTokens: Math.max(2048, currentBudget.maxResponseTokens),
             };
             const waitMs = (retryAfter ?? 5) * 1000;
             await sleep(waitMs);
@@ -184,7 +184,7 @@ export abstract class BaseAIProvider {
           currentBudget = {
             ...currentBudget,
             maxPromptTokens: Math.max(500, Math.floor(currentBudget.maxPromptTokens * shrinkFactor)),
-            maxResponseTokens: Math.max(200, Math.floor(currentBudget.maxResponseTokens * shrinkFactor)),
+            maxResponseTokens: Math.max(2048, currentBudget.maxResponseTokens),
           };
           continue;
         }
@@ -294,7 +294,7 @@ export abstract class BaseAIProvider {
 
       const verdict: ReviewDecision = parsed.verdict === 'REQUEST_CHANGES' ? 'REQUEST_CHANGES' : 'APPROVE';
       const score = this.normalizeScore(parsed.score);
-      const summary = String(parsed.summary || 'No summary provided');
+      const summary = String(parsed.summary || 'No summary provided').trim();
 
       const strengths: string[] = Array.isArray(parsed.strengths)
         ? parsed.strengths.filter((s: any) => s).map(String)

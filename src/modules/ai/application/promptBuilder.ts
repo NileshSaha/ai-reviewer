@@ -78,8 +78,6 @@ Return ONLY valid JSON with no markdown wrapping and no chain-of-thought tags. U
 {
   "verdict": "APPROVE or REQUEST_CHANGES",
   "score": 0..100,
-  "summary": "2-3 sentence overall assessment",
-  "strengths": ["what looks good"],
   "issues": [
     {
       "severity": "critical or major or minor",
@@ -89,6 +87,8 @@ Return ONLY valid JSON with no markdown wrapping and no chain-of-thought tags. U
       "suggestion": "specific suggestion for fixing the issue"
     }
   ],
+  "strengths": ["what looks good"],
+  "summary": "concise 2-3 sentence overall assessment",
   "security": "security concerns or null if none",
   "performance": "performance concerns or null if none",
   "comments": [
@@ -101,6 +101,8 @@ Return ONLY valid JSON with no markdown wrapping and no chain-of-thought tags. U
 }
 
 ## Guidelines
+- Write "issues" and "strengths" first as specified in the schema.
+- Keep the summary concise (max 2-3 sentences) so the entire JSON response completes cleanly.
 - Include inline comments (in the "comments" field) only for significant issues. Skip style-only nits in inline comments.
 - Be specific and actionable in every comment.
 - If the PR is very small or trivial, reflect that in a higher score.
