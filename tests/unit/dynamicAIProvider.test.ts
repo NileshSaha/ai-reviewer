@@ -46,6 +46,7 @@ describe('DynamicAIProvider', () => {
     storedPriority = ['minimax', 'gemini', 'groq'];
     mockPriorityRepo = {
       seedDefaultsIfEmpty: jest.fn(),
+      ensureProvidersExist: jest.fn(),
       getPriorityOrder: jest.fn().mockImplementation(async () => storedPriority),
       setPriorityOrder: jest.fn().mockImplementation(async (providers: string[]) => {
         storedPriority = providers;

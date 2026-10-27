@@ -127,7 +127,7 @@ src/
 │  2. Fetch changed files                                         │
 │  3. Filter files (ignore binaries, locks, dist, etc.)           │
 │  4. Build review prompt                                         │
-│  5. Call AI provider (Minimax/Groq/OpenAI)                      │
+│  5. Call AI provider (Minimax/Gemini/OpenRouter/Groq/DeepSeek/OpenAI) │
 │  6. Parse AI response                                           │
 │  7. Decide (APPROVE if score >= 80, else REQUEST_CHANGES)      │
 │  8. Map to GitHub event (see Decision Mapping below)            │
@@ -226,14 +226,14 @@ All external dependencies are abstracted behind interfaces:
 | `UUIDGenerator` | ID generation | `UUIDAdapter` |
 | `EventBus` | Event publishing | `InMemoryEventBus` |
 | `GitHubClient` | GitHub API | `OctokitGitHubClient` |
-| `AIProvider` | AI inference | `MinimaxAIProvider`, `GroqAIProvider`, `OpenAIProvider` |
+| `AIProvider` | AI inference | `MinimaxAIProvider`, `GroqAIProvider`, `DeepSeekAIProvider`, `OpenAIProvider` |
 | `ReviewRepository` | Review persistence | `SequelizeReviewRepository` |
 
 ---
 
 ## AI Providers
 
-Three AI providers supported via adapter pattern:
+Six AI providers supported via adapter pattern:
 
 ### Minimax
 - Endpoint: `https://api.minimax.io/v1/chat/completions` (configurable via `MINIMAX_API_ENDPOINT`)
@@ -245,6 +245,13 @@ Three AI providers supported via adapter pattern:
 - Model: `llama-3.1-8b-instant`
 - Auth: Bearer token
 - Free tier available
+
+### DeepSeek
+- Endpoint: `https://api.deepseek.com/chat/completions` (configurable via `DEEPSEEK_API_ENDPOINT`)
+- Model: `deepseek-flash` (fast/cheap, default) or `deepseek-v4-pro` (deeper reasoning), configurable via `DEEPSEEK_MODEL`
+- Auth: Bearer token (`DEEPSEEK_API_KEY`)
+- OpenAI-compatible; JSON Output via `response_format: { type: 'json_object' }` (needs the word "json" + a schema example in the prompt — `promptBuilder` provides both)
+- Thinking mode is **disabled by default** for fast structured reviews; enable with `DEEPSEEK_THINKING=enabled` (chain-of-thought in `reasoning_content`, `temperature` is ignored, response-token floor is raised to 8192)
 
 ### OpenAI
 - Endpoint: `https://api.openai.com/v1/chat/completions`
@@ -276,8 +283,12 @@ All configuration via environment variables:
 |----------|----------|---------|-------------|
 | `GITHUB_PAT` | Yes | - | GitHub Personal Access Token |
 | `GITHUB_USERNAME` | Yes | - | GitHub username to monitor |
-| `LLM_PROVIDER` | Yes | `groq` | `minimax`, `groq`, or `openai` |
+| `LLM_PROVIDER` | Yes | `minimax` | `minimax`, `gemini`, `openrouter`, `groq`, `deepseek`, or `openai` |
 | `GROQ_API_KEY` | For Groq | - | Groq API key |
+| `DEEPSEEK_API_KEY` | For DeepSeek | - | DeepSeek API key |
+| `DEEPSEEK_MODEL` | No | `deepseek-flash` | DeepSeek model (`deepseek-flash`, `deepseek-v4-pro`) |
+| `DEEPSEEK_API_ENDPOINT` | No | `https://api.deepseek.com/chat/completions` | DeepSeek chat completions endpoint |
+| `DEEPSEEK_THINKING` | No | `disabled` | `enabled` or `disabled` — DeepSeek chain-of-thought mode |
 | `MINIMAX_API_KEY` | For Minimax | - | MiniMax API key |
 | `OPENAI_API_KEY` | For OpenAI | - | OpenAI API key |
 | `DATABASE_URL` | Yes | - | PostgreSQL connection string |

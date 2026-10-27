@@ -72,6 +72,7 @@ async function main(): Promise<void> {
 
   const providerPriorityRepo = new SequelizeProviderPriorityRepository(logger);
   await providerPriorityRepo.seedDefaultsIfEmpty(DEFAULT_PRIORITY_ORDER);
+  await providerPriorityRepo.ensureProvidersExist(DEFAULT_PRIORITY_ORDER);
   const initialPriorityOrder = await providerPriorityRepo.getPriorityOrder();
 
   const githubClient = new OctokitGitHubClient(config.github.pat, logger, clock);

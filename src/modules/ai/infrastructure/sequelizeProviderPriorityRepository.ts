@@ -29,6 +29,35 @@ export class SequelizeProviderPriorityRepository implements ProviderPriorityRepo
     this.logger.info('Initial provider priority order seeded successfully');
   }
 
+  /**
+   * Appends providers that are supported by the code base but missing from the
+   * priority table (e.g. providers added after the initial seeding). Keeps
+   * existing priorities untouched so operator-tuned order is preserved.
+   */
+  async ensureProvidersExist(providers: string[]): Promise<void> {
+    const existingRecords = await ProviderPriorityModel.findAll();
+    const existingNames = new Set(existingRecords.map((r) => r.provider));
+    const missingProviders = providers.filter((p) => !existingNames.has(p));
+
+    if (missingProviders.length === 0) {
+      return;
+    }
+
+    let nextPriority = existingRecords.reduce((max, r) => Math.max(max, r.priority), 0) + 1;
+
+    for (const provider of missingProviders) {
+      await ProviderPriorityModel.create({
+        provider,
+        priority: nextPriority,
+      });
+      nextPriority++;
+    }
+
+    this.logger.info('Appended newly supported providers to priority table', {
+      providers: missingProviders,
+    });
+  }
+
   async getPriorityOrder(): Promise<string[]> {
     const records = await ProviderPriorityModel.findAll({
       order: [['priority', 'ASC']],

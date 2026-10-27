@@ -2,7 +2,9 @@ version: '3.8'
 
 services:
   ai-reviewer:
-    build: .
+    image: ai-reviewer:latest
+    build:
+      context: .
     container_name: ai-reviewer
     restart: unless-stopped
     ports:
@@ -20,7 +22,7 @@ services:
 
   postgres:
     image: postgres:16-alpine
-    container_name: postgres
+    container_name: ai-reviewer-postgres
     restart: unless-stopped
     ports:
       - "5431:5432"
@@ -31,10 +33,11 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ai_reviewer"]
       interval: 5s
       timeout: 5s
       retries: 5
 
 volumes:
   postgres_data:
+    name: ai-reviewer_postgres_data

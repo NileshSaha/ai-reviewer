@@ -21,7 +21,7 @@ export interface RepositoryConfig {
 }
 
 export interface AIConfig {
-  provider: 'minimax' | 'gemini' | 'openrouter' | 'groq' | 'openai';
+  provider: 'minimax' | 'gemini' | 'openrouter' | 'groq' | 'deepseek' | 'openai';
   minimaxApiKey: string;
   minimaxModel: string;
   minimaxEndpoint?: string;
@@ -34,6 +34,10 @@ export interface AIConfig {
   groqApiKey: string;
   groqModel: string;
   groqEndpoint?: string;
+  deepseekApiKey?: string;
+  deepseekModel?: string;
+  deepseekEndpoint?: string;
+  deepseekThinking?: boolean;
   openaiApiKey: string;
   openaiModel: string;
   openaiEndpoint?: string;

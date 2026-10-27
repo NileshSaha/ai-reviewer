@@ -3,6 +3,7 @@ export * from './minimaxAIProvider';
 export * from './geminiAIProvider';
 export * from './openrouterAIProvider';
 export * from './groqAIProvider';
+export * from './deepseekAIProvider';
 export * from './openAIProvider';
 export * from './fallbackAIProvider';
 export * from './aiFactory';

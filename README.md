@@ -53,7 +53,7 @@ All configuration via environment variables in `.env`:
 |---|---|---|---|
 | `GITHUB_PAT` | Yes | - | GitHub Personal Access Token |
 | `GITHUB_USERNAME` | Yes | - | GitHub username to monitor |
-| `LLM_PROVIDER` | No | `minimax` | Primary provider (`minimax`, `gemini`, `openrouter`, `groq`, or `openai`) |
+| `LLM_PROVIDER` | No | `minimax` | Primary provider (`minimax`, `gemini`, `openrouter`, `groq`, `deepseek`, or `openai`) |
 | `MINIMAX_API_KEY` | For Minimax | - | MiniMax API key (Token Plan `sk-cp...` or standard key) |
 | `MINIMAX_MODEL` | No | `MiniMax-M3` | MiniMax model (`MiniMax-M3`, `MiniMax-Text-01`, `MiniMax-M2.7`) |
 | `MINIMAX_API_ENDPOINT` | No | `https://api.minimax.io/v1/chat/completions` | MiniMax API endpoint |
@@ -64,6 +64,10 @@ All configuration via environment variables in `.env`:
 | `OPENROUTER_MODEL` | No | `openrouter/free` | OpenRouter model |
 | `GROQ_API_KEY` | For Groq | - | Groq API key (Fallback 4) |
 | `GROQ_MODEL` | No | `llama-3.1-8b-instant` | Groq model |
+| `DEEPSEEK_API_KEY` | For DeepSeek | - | DeepSeek API key (Fallback 5) |
+| `DEEPSEEK_MODEL` | No | `deepseek-flash` | DeepSeek model (`deepseek-flash` or `deepseek-v4-pro`) |
+| `DEEPSEEK_API_ENDPOINT` | No | `https://api.deepseek.com/chat/completions` | DeepSeek chat completions endpoint |
+| `DEEPSEEK_THINKING` | No | `disabled` | `enabled` = chain-of-thought (slower, deeper), `disabled` = fast structured JSON |
 | `OPENAI_API_KEY` | For OpenAI | - | OpenAI API key |
 | `OPENAI_MODEL` | No | `gpt-4o-mini` | OpenAI model |
 | `DATABASE_URL` | Yes | - | PostgreSQL connection string |
@@ -104,7 +108,10 @@ The AI reviewer implements a **dynamic runtime fallback chain**. When a PR revie
 │ 5. Groq                 │ ──(Rate limit / 429 / Error)──►
 └─────────────────────────┘
 ┌─────────────────────────┐
-│ 6. OpenAI (Optional)    │
+│ 6. DeepSeek             │ ──(Rate limit / 429 / Error)──►
+└─────────────────────────┘
+┌─────────────────────────┐
+│ 7. OpenAI (Optional)    │
 └─────────────────────────┘
 ```
 
@@ -116,6 +123,7 @@ The AI reviewer implements a **dynamic runtime fallback chain**. When a PR revie
 | **Gemini** | `gemini-3.5-flash` | **~2 - 3s** | ⚡⚡⚡ **Ultra Fast** | Large PR diffs, high throughput | Generous rate limits and massive token context |
 | **OpenRouter** | `openrouter/free` | **~2 - 4s** | ⚡⚡ **Very Fast** | Free multi-model routing, reliable fallback | Automatically routes to best available free model |
 | **OpenAI** | `gpt-4o-mini` | **~2 - 4s** | ⚡⚡ **Very Fast** | Reliable, consistent reviews | Cost-effective and stable |
+| **DeepSeek** | `deepseek-flash` | **~2 - 4s** | ⚡⚡ **Very Fast** | Cheap, high-quality structured reviews | Thinking mode off by default; set `DEEPSEEK_THINKING=enabled` for deeper chain-of-thought reviews |
 | **MiniMax** | `MiniMax-Text-01` | **~2 - 4s** | ⚡⚡ **Fast** | Fast production reviews | High quality code review without chain-of-thought overhead |
 | **MiniMax** | `MiniMax-M3` | **~4 - 7s** | 🧠 **Deep Reasoning** | In-depth architectural & security reviews | Produces reasoning thought tokens before final review verdict |
 

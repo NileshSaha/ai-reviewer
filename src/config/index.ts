@@ -50,7 +50,7 @@ function parseRepositories(): RepositoryConfig[] {
 
 export function loadConfig(): AppConfig {
   const llmProvider = getEnvOptional('LLM_PROVIDER', 'minimax') as AIConfig['provider'];
-  if (!['minimax', 'gemini', 'openrouter', 'groq', 'openai'].includes(llmProvider)) {
+  if (!['minimax', 'gemini', 'openrouter', 'groq', 'deepseek', 'openai'].includes(llmProvider)) {
     throw new ValidationError(`Invalid LLM_PROVIDER: ${llmProvider}`);
   }
 
@@ -94,6 +94,11 @@ export function loadConfig(): AppConfig {
     throw new ValidationError('SKIP_REVIEW_BELOW_SCORE must be between 0 and 100');
   }
 
+  const deepseekThinkingRaw = getEnvOptional('DEEPSEEK_THINKING', 'disabled').trim().toLowerCase();
+  if (!['enabled', 'disabled'].includes(deepseekThinkingRaw)) {
+    throw new ValidationError('DEEPSEEK_THINKING must be either "enabled" or "disabled"');
+  }
+
   const repositories = parseRepositories();
 
   const database: DatabaseConfig = {
@@ -127,6 +132,10 @@ export function loadConfig(): AppConfig {
     groqApiKey: process.env['GROQ_API_KEY'] ?? '',
     groqModel: getEnvOptional('GROQ_MODEL', 'llama-3.1-8b-instant'),
     groqEndpoint: getEnvOptional('GROQ_API_ENDPOINT', 'https://api.groq.com/openai/v1/chat/completions'),
+    deepseekApiKey: process.env['DEEPSEEK_API_KEY'] || undefined,
+    deepseekModel: getEnvOptional('DEEPSEEK_MODEL', 'deepseek-flash'),
+    deepseekEndpoint: getEnvOptional('DEEPSEEK_API_ENDPOINT', 'https://api.deepseek.com/chat/completions'),
+    deepseekThinking: deepseekThinkingRaw === 'enabled',
     openaiApiKey: process.env['OPENAI_API_KEY'] ?? '',
     openaiModel: getEnvOptional('OPENAI_MODEL', 'gpt-4o-mini'),
     openaiEndpoint: getEnvOptional('OPENAI_API_ENDPOINT', 'https://api.openai.com/v1/chat/completions'),

@@ -3,6 +3,7 @@ import { MinimaxAIProvider } from '../infrastructure/minimaxAIProvider';
 import { GeminiAIProvider } from '../infrastructure/geminiAIProvider';
 import { OpenRouterAIProvider } from '../infrastructure/openrouterAIProvider';
 import { GroqAIProvider } from '../infrastructure/groqAIProvider';
+import { DeepSeekAIProvider } from '../infrastructure/deepseekAIProvider';
 import { OpenAIProvider } from '../infrastructure/openAIProvider';
 import { FallbackAIProvider, ProviderEntry } from '../infrastructure/fallbackAIProvider';
 import { AIConfig } from '../../../config/types';
@@ -25,6 +26,7 @@ export const DEFAULT_PRIORITY_ORDER = [
   'gemini',
   'openrouter',
   'groq',
+  'deepseek',
   'openai',
 ];
 
@@ -87,6 +89,21 @@ export function createAIProvider(
         new GroqAIProvider(key, logger, config.groqModel, config.groqEndpoint, providerOpts),
     },
     {
+      id: 'deepseek',
+      providerType: 'deepseek',
+      displayName: 'deepseek',
+      apiKey: config.deepseekApiKey || undefined,
+      create: (key) =>
+        new DeepSeekAIProvider(
+          key,
+          logger,
+          config.deepseekModel,
+          config.deepseekEndpoint,
+          providerOpts,
+          config.deepseekThinking
+        ),
+    },
+    {
       id: 'openai',
       providerType: 'openai',
       displayName: 'openai',
@@ -142,7 +159,7 @@ export function createAIProvider(
 
   if (prioritizedCandidates.length === 0) {
     throw new ValidationError(
-      'No AI provider API key configured. Set at least one of: MINIMAX_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY, GROQ_API_KEY, OPENAI_API_KEY'
+      'No AI provider API key configured. Set at least one of: MINIMAX_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY, GROQ_API_KEY, DEEPSEEK_API_KEY, OPENAI_API_KEY'
     );
   }
 
